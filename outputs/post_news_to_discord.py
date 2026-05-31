@@ -104,7 +104,7 @@ def build_embed(item: dict[str, Any], category: str) -> dict[str, Any]:
     summary_ko = normalize_multiline(item.get("summary_ko", ""), 3300)
     published_at_kst = item.get("published_at_kst") or ""
 
-    description_parts = [summary_ko]
+    description_parts = [f"**요약**\n{summary_ko}" if summary_ko else ""]
     if link:
         description_parts.append(f"[원문 출처 링크]({link})")
     description = "\n\n".join(part for part in description_parts if part)
@@ -113,6 +113,10 @@ def build_embed(item: dict[str, Any], category: str) -> dict[str, Any]:
         "title": truncate(item.get("title", "제목 없음"), 256),
         "description": description[:4096],
         "color": CATEGORY_COLORS[category],
+        "fields": [
+            {"name": "출처 매체", "value": truncate(source, 1024), "inline": True},
+            {"name": "발행일", "value": truncate(published_at_kst or "-", 1024), "inline": True},
+        ],
         "footer": {"text": truncate(f"{source} · {published_at_kst}", 2048)},
     }
     if link:
