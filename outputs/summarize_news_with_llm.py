@@ -138,6 +138,15 @@ def call_openai_compatible_llm(
     prompt: str,
     timeout: int,
 ) -> dict[str, str]:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if "openrouter.ai" in api_url:
+        headers["HTTP-Referer"] = os.environ.get("OPENROUTER_SITE_URL", "https://github.com")
+        headers["X-Title"] = os.environ.get("OPENROUTER_APP_NAME", "Daily Bank Finance News Brief")
+
     body = {
         "model": model,
         "messages": [
@@ -153,11 +162,7 @@ def call_openai_compatible_llm(
     request = urllib.request.Request(
         api_url,
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
+        headers=headers,
         method="POST",
     )
 
@@ -249,6 +254,24 @@ def call_llm(
     return call_openai_compatible_llm(api_url=api_url, api_key=api_key, model=model, prompt=prompt, timeout=timeout)
 
 
+def is_retryable_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    retry_markers = (
+        "429",
+        "rate limit",
+        "temporarily",
+        "timeout",
+        "timed out",
+        "500",
+        "502",
+        "503",
+        "504",
+        "connection reset",
+        "remote disconnected",
+    )
+    return any(marker in text for marker in retry_markers)
+
+
 def rebuild_items_by_category(data: dict[str, Any]) -> None:
     items_by_category = {category: [] for category in CATEGORIES}
     for item in data.get("items", []):
@@ -310,14 +333,27 @@ def summarize_items(args: argparse.Namespace) -> int:
         title = str(item.get("title", "")).replace("\n", " ")[:60]
         print(f"[{idx}/{total}] 요청 중: {title}", flush=True)
         try:
-            result = call_llm(
-                provider=provider,
-                api_url=api_url,
-                api_key=api_key,
-                model=model,
-                item=item,
-                timeout=args.timeout,
-            )
+            result = None
+            for attempt in range(args.retries + 1):
+                try:
+                    result = call_llm(
+                        provider=provider,
+                        api_url=api_url,
+                        api_key=api_key,
+                        model=model,
+                        item=item,
+                        timeout=args.timeout,
+                    )
+                    break
+                except Exception as retry_exc:
+                    if attempt >= args.retries or not is_retryable_error(retry_exc):
+                        raise
+                    wait_seconds = args.retry_sleep * (2**attempt)
+                    print(f"[{idx}/{total}] 재시도 대기 {wait_seconds:.1f}초: {type(retry_exc).__name__}: {retry_exc}", flush=True)
+                    time.sleep(wait_seconds)
+
+            if result is None:
+                raise RuntimeError("LLM 응답을 받지 못했습니다.")
             item["summary_ko"] = result["summary_ko"]
             item["category"] = result["category"]
             item.pop("summary_error", None)
@@ -348,6 +384,12 @@ def summarize_items(args: argparse.Namespace) -> int:
     if total > 0 and success_count == 0:
         print("요약된 기사가 0건이라 다음 단계로 진행할 수 없습니다. 위의 첫 실패 원인을 확인하세요.")
         return 1
+    if total > 0:
+        success_ratio = success_count / total
+        print(f"요약 성공률: {success_ratio:.1%}")
+        if success_ratio < args.min_success_ratio:
+            print(f"요약 성공률이 기준({args.min_success_ratio:.0%})보다 낮아 다음 단계로 진행하지 않습니다.")
+            return 1
     return 0
 
 
@@ -357,6 +399,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--env", default=".env", help="LLM_API_KEY를 읽을 .env 파일 경로")
     parser.add_argument("--sleep", type=float, default=0.5, help="LLM 요청 사이 대기 시간(초). 기본값: 0.5")
     parser.add_argument("--timeout", type=int, default=60, help="LLM API 요청 타임아웃(초). 기본값: 60")
+    parser.add_argument("--retries", type=int, default=3, help="429/일시 오류 발생 시 기사별 재시도 횟수. 기본값: 3")
+    parser.add_argument("--retry-sleep", type=float, default=5.0, help="재시도 기본 대기 시간(초). 기본값: 5.0")
+    parser.add_argument("--min-success-ratio", type=float, default=0.8, help="다음 단계로 진행할 최소 요약 성공률. 기본값: 0.8")
     parser.add_argument("--limit", type=int, default=0, help="테스트용 처리 개수 제한. 0이면 전체 처리")
     parser.add_argument("--force", action="store_true", help="이미 summary_ko가 있는 기사도 다시 처리")
     return parser.parse_args()
