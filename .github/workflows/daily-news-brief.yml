@@ -35,6 +35,9 @@ jobs:
       - name: Summarize and classify banking and finance articles
         run: python outputs/summarize_news_with_llm.py --input outputs/news_recent_24h.json
 
+      - name: Check summarized article count
+        run: python -c "import json, sys; data=json.load(open('outputs/news_recent_24h.json', encoding='utf-8')); items=data.get('items', []); summarized=sum(1 for item in items if item.get('summary_ko')); print(f'articles={len(items)}, summarized={summarized}'); sys.exit(1 if items and summarized == 0 else 0)"
+
       - name: Post brief to Discord
         run: python outputs/post_news_to_discord.py --input outputs/news_recent_24h.json
 
