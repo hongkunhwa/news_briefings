@@ -1,0 +1,5 @@
+.env
+credentials.json
+outputs/news_recent_24h.json
+outputs/__pycache__/
+__pycache__/
