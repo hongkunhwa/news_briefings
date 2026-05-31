@@ -40,7 +40,7 @@ jobs:
         run: python -c "import json, sys; data=json.load(open('outputs/news_recent_24h.json', encoding='utf-8')); items=data.get('items', []); summarized=sum(1 for item in items if item.get('summary_ko')); ratio=(summarized/len(items)) if items else 1; print(f'articles={len(items)}, summarized={summarized}, ratio={ratio:.1%}'); sys.exit(1 if items and ratio < 0.7 else 0)"
 
       - name: Post brief to Discord
-        run: python outputs/post_news_to_discord.py --input outputs/news_recent_24h.json
+        run: python outputs/post_news_to_discord.py --input outputs/news_recent_24h.json --limit-per-category 5
 
       - name: Append brief to Google Sheets
         run: python outputs/append_news_to_sheets.py --input outputs/news_recent_24h.json
