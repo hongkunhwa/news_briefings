@@ -8,6 +8,7 @@ updates the original JSON with:
   - summary_ko: three Korean lines (fact, context, implication)
   - category: one of the banking interview categories
   - interview_questions: interview questions based on the article
+  - interview_answers: concise answers for the interview questions
 
 Optional .env values:
   LLM_PROVIDER=gemini or openai
@@ -44,11 +45,11 @@ PROMPT_TEMPLATE = """다음 한국 뉴스 기사 1건을 읽고 JSON만 출력�
 
 요구사항:
 - summary_ko는 한국어 3줄이어야 한다.
-- 1줄째는 "사실: "로 시작하고 핵심 사실만 쓴다.
-- 2줄째는 "맥락: "으로 시작하고 배경/흐름을 쓴다.
-- 3줄째는 "시사점: "으로 시작하고 의미/영향을 쓴다.
+- 각 줄은 사실, 맥락, 시사점 순서로 쓰되 "사실:", "맥락:", "시사점:" 같은 라벨은 붙이지 않는다.
 - category는 아래 3개 중 정확히 하나만 고른다.
 - interview_questions는 기사 내용과 은행권 면접 관점에 맞는 한국어 질문 2개 배열로 만든다.
+- interview_answers는 interview_questions 각각에 대한 한국어 답변 2개 배열로 만든다.
+- interview_answers 각 답변은 1~2문장으로, 면접에서 바로 말할 수 있는 톤으로 쓴다.
 - 출력은 JSON 객체 하나만 허용한다.
 
 카테고리:
@@ -57,7 +58,7 @@ PROMPT_TEMPLATE = """다음 한국 뉴스 기사 1건을 읽고 JSON만 출력�
 - 금융권 주요 이슈: 디지털금융, 생성형 AI, 금융 AI, 마이데이터, 오픈뱅킹, 인터넷은행, 카카오뱅크, 토스, 케이뱅크, 반도체, 배터리, 자동차, 조선, 부동산, 중소기업, 수출, ESG, 해외진출, 조직개편, 신사업
 
 출력 형식:
-{{"summary_ko":"사실: ...\\n맥락: ...\\n시사점: ...","category":"거시경제·금융정책","interview_questions":["금리 인하가 은행 수익성에 미치는 영향은?","환율 상승이 국내 경제에 미치는 영향은?"]}}
+{{"summary_ko":"핵심 사실 한 줄\\n배경과 맥락 한 줄\\n은행권 관점의 시사점 한 줄","category":"거시경제·금융정책","interview_questions":["금리 인하가 은행 수익성에 미치는 영향은?","환율 상승이 국내 경제에 미치는 영향은?"],"interview_answers":["금리 인하는 대출금리 하락으로 순이자마진을 압박할 수 있지만, 차주의 이자 부담을 낮춰 연체 위험을 완화할 수 있습니다.","환율 상승은 수입물가와 기업 비용을 높여 물가와 수익성에 부담을 주지만, 수출기업에는 가격 경쟁력 개선 요인이 될 수 있습니다."]}}
 
 기사:
 제목: {title}
@@ -113,7 +114,7 @@ def normalize_summary(text: str) -> str:
     normalized: list[str] = []
     for label, line in zip(labels, lines):
         line = re.sub(r"^(사실|맥락|시사점)\s*[:：-]?\s*", "", line).strip()
-        normalized.append(f"{label} {line}".rstrip())
+        normalized.append(line)
     return "\n".join(normalized)
 
 
@@ -132,6 +133,15 @@ def normalize_interview_questions(value: Any) -> list[str]:
     return normalized[:2]
 
 
+def normalize_interview_answers(value: Any) -> list[str]:
+    if isinstance(value, list):
+        answers = [str(item).strip() for item in value if str(item).strip()]
+    else:
+        text = str(value or "").replace("\r\n", "\n")
+        answers = [line.strip(" -•\t") for line in text.split("\n") if line.strip(" -•\t")]
+    return answers[:2]
+
+
 def parse_llm_content(content: str) -> dict[str, Any]:
     parsed = json.loads(strip_code_fence(content))
     summary_ko = normalize_summary(str(parsed.get("summary_ko", "")))
@@ -144,7 +154,15 @@ def parse_llm_content(content: str) -> dict[str, Any]:
             f"이 뉴스가 {category} 관점에서 은행권에 주는 영향은?",
             "면접에서 이 이슈를 은행 지원 동기와 어떻게 연결해 설명할 수 있을까?",
         ]
-    return {"summary_ko": summary_ko, "category": category, "interview_questions": interview_questions}
+    interview_answers = normalize_interview_answers(parsed.get("interview_answers"))
+    while len(interview_answers) < len(interview_questions):
+        interview_answers.append("기사의 핵심 변화가 은행의 수익성, 리스크 관리, 고객 대응에 어떤 영향을 주는지 연결해 답변하면 좋습니다.")
+    return {
+        "summary_ko": summary_ko,
+        "category": category,
+        "interview_questions": interview_questions,
+        "interview_answers": interview_answers[: len(interview_questions)],
+    }
 
 
 def call_openai_compatible_llm(
@@ -388,6 +406,7 @@ def summarize_items(args: argparse.Namespace) -> int:
             item["summary_ko"] = result["summary_ko"]
             item["category"] = result["category"]
             item["interview_questions"] = result["interview_questions"]
+            item["interview_answers"] = result["interview_answers"]
             item.pop("summary_error", None)
             success_count += 1
             print(f"[{idx}/{total}] 완료: {result['category']} / {title}", flush=True)
