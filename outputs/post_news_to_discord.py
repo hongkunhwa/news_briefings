@@ -27,20 +27,19 @@ except ImportError:
 
 
 CATEGORIES = [
-    "거시경제 · 금융시장",
-    "은행 · 금융산업",
-    "금융정책 · 규제",
-    "디지털금융 · AI · 핀테크",
-    "지원 기업 · 금융사 동향",
-    "산업 · 기업 이슈",
+    "거시경제·금융정책",
+    "은행·금융산업",
+    "금융권 주요 이슈",
 ]
 CATEGORY_COLORS = {
-    "거시경제 · 금융시장": 0xDC2626,  # red
-    "은행 · 금융산업": 0x16A34A,  # green
-    "금융정책 · 규제": 0xF97316,  # orange
-    "디지털금융 · AI · 핀테크": 0x2563EB,  # blue
-    "지원 기업 · 금융사 동향": 0x9333EA,  # purple
-    "산업 · 기업 이슈": 0x0891B2,  # teal
+    "거시경제·금융정책": 0xDC2626,  # red
+    "은행·금융산업": 0x16A34A,  # green
+    "금융권 주요 이슈": 0x2563EB,  # blue
+}
+DEFAULT_CATEGORY_LIMITS = {
+    "거시경제·금융정책": 4,
+    "은행·금융산업": 4,
+    "금융권 주요 이슈": 2,
 }
 
 
@@ -103,8 +102,9 @@ def category_groups(data: dict[str, Any], limit_per_category: int = 0) -> dict[s
 
     for category, items in grouped.items():
         items.sort(key=lambda item: item.get("published_at") or "", reverse=True)
-        if limit_per_category:
-            grouped[category] = items[:limit_per_category]
+        limit = limit_per_category or DEFAULT_CATEGORY_LIMITS.get(category, 0)
+        if limit:
+            grouped[category] = items[:limit]
     return grouped
 
 
