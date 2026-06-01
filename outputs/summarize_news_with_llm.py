@@ -153,6 +153,7 @@ def call_openai_compatible_llm(
     api_key: str,
     model: str,
     prompt: str,
+    max_tokens: int,
     timeout: int,
 ) -> dict[str, str]:
     headers = {
@@ -174,6 +175,7 @@ def call_openai_compatible_llm(
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
+        "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
     request = urllib.request.Request(
@@ -200,6 +202,7 @@ def call_gemini_llm(
     api_key: str,
     model: str,
     prompt: str,
+    max_tokens: int,
     timeout: int,
 ) -> dict[str, str]:
     api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -219,6 +222,7 @@ def call_gemini_llm(
         ],
         "generationConfig": {
             "temperature": 0.2,
+            "maxOutputTokens": max_tokens,
             "responseMimeType": "application/json",
         },
     }
@@ -263,12 +267,20 @@ def call_llm(
     api_key: str,
     model: str,
     item: dict[str, Any],
+    max_tokens: int,
     timeout: int,
 ) -> dict[str, str]:
     prompt = build_prompt(item)
     if provider == "gemini":
-        return call_gemini_llm(api_key=api_key, model=model, prompt=prompt, timeout=timeout)
-    return call_openai_compatible_llm(api_url=api_url, api_key=api_key, model=model, prompt=prompt, timeout=timeout)
+        return call_gemini_llm(api_key=api_key, model=model, prompt=prompt, max_tokens=max_tokens, timeout=timeout)
+    return call_openai_compatible_llm(
+        api_url=api_url,
+        api_key=api_key,
+        model=model,
+        prompt=prompt,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
 
 
 def is_retryable_error(exc: Exception) -> bool:
@@ -342,6 +354,7 @@ def summarize_items(args: argparse.Namespace) -> int:
     print(f"입력 파일: {input_path}")
     print(f"프로바이더: {provider}")
     print(f"모델: {model}")
+    print(f"최대 출력 토큰: {args.max_tokens}")
     print(f"요약 대상: {total}건")
 
     success_count = 0
@@ -359,6 +372,7 @@ def summarize_items(args: argparse.Namespace) -> int:
                         api_key=api_key,
                         model=model,
                         item=item,
+                        max_tokens=args.max_tokens,
                         timeout=args.timeout,
                     )
                     break
@@ -387,6 +401,7 @@ def summarize_items(args: argparse.Namespace) -> int:
             "provider": provider,
             "model": model,
             "api_url": api_url,
+            "max_tokens": args.max_tokens,
             "sleep_seconds": args.sleep,
             "processed_target_count": total,
         }
@@ -417,6 +432,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--env", default=".env", help="LLM_API_KEY를 읽을 .env 파일 경로")
     parser.add_argument("--sleep", type=float, default=0.5, help="LLM 요청 사이 대기 시간(초). 기본값: 0.5")
     parser.add_argument("--timeout", type=int, default=60, help="LLM API 요청 타임아웃(초). 기본값: 60")
+    parser.add_argument("--max-tokens", type=int, default=700, help="기사 1건당 LLM 최대 출력 토큰. 기본값: 700")
     parser.add_argument("--retries", type=int, default=3, help="429/일시 오류 발생 시 기사별 재시도 횟수. 기본값: 3")
     parser.add_argument("--retry-sleep", type=float, default=5.0, help="재시도 기본 대기 시간(초). 기본값: 5.0")
     parser.add_argument("--min-success-ratio", type=float, default=0.8, help="다음 단계로 진행할 최소 요약 성공률. 기본값: 0.8")
