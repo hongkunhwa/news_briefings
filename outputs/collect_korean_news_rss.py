@@ -45,15 +45,17 @@ class FeedSource:
 
 
 CATEGORIES: dict[str, list[FeedSource]] = {
-    "거시경제 · 금융시장": [
+    "거시경제·금융정책": [
         FeedSource("한국은행 보도자료(통화정책)", "https://www.bok.or.kr/portal/bbs/P0000559/news.rss?menuNo=200690"),
         FeedSource("한국은행 보도자료(경제통계)", "https://www.bok.or.kr/portal/bbs/B0000501/news.rss?menuNo=201264"),
         FeedSource("한국은행 경제전망보고서", "https://www.bok.or.kr/portal/bbs/P0002359/news.rss?menuNo=200066"),
+        FeedSource("정책브리핑 금융위원회", "https://www.korea.kr/rss/dept_fsc.xml"),
+        FeedSource("정책브리핑 보도자료", "https://www.korea.kr/rss/pressrelease.xml"),
         FeedSource("한국경제 경제", "https://www.hankyung.com/feed/economy"),
         FeedSource("한국경제 증권", "https://www.hankyung.com/feed/finance"),
         FeedSource("매일경제 경제", "https://www.mk.co.kr/rss/30100041/"),
     ],
-    "은행 · 금융산업": [
+    "은행·금융산업": [
         FeedSource("뉴시스 금융", "https://www.newsis.com/RSS/bank.xml"),
         FeedSource("파이낸셜뉴스 금융", "https://www.fnnews.com/rss/r20/fn_realnews_finance.xml"),
         FeedSource("한국경제 증권", "https://www.hankyung.com/feed/finance"),
@@ -61,35 +63,21 @@ CATEGORIES: dict[str, list[FeedSource]] = {
         FeedSource("매일경제 기업·경영", "https://www.mk.co.kr/rss/50100032/"),
         FeedSource("매일경제 증권", "https://www.mk.co.kr/rss/50200011/"),
     ],
-    "금융정책 · 규제": [
-        FeedSource("정책브리핑 금융위원회", "https://www.korea.kr/rss/dept_fsc.xml"),
-        FeedSource("정책브리핑 보도자료", "https://www.korea.kr/rss/pressrelease.xml"),
-        FeedSource("한국경제 경제", "https://www.hankyung.com/feed/economy"),
-        FeedSource("파이낸셜뉴스 금융", "https://www.fnnews.com/rss/r20/fn_realnews_finance.xml"),
-        FeedSource("뉴시스 금융", "https://www.newsis.com/RSS/bank.xml"),
-    ],
-    "디지털금융 · AI · 핀테크": [
+    "금융권 주요 이슈": [
         FeedSource("과기정통부 보도자료", "https://www.msit.go.kr/user/rss/rss.do?bbsSeqNo=94"),
         FeedSource("과기정통부 정보통신", "https://www.msit.go.kr/user/rss/rss.do?bbsSeqNo=67"),
         FeedSource("한국경제 IT", "https://www.hankyung.com/feed/it"),
         FeedSource("파이낸셜뉴스 IT", "https://www.fnnews.com/rss/r20/fn_realnews_it.xml"),
         FeedSource("파이낸셜뉴스 블록포스트", "https://www.fnnews.com/rss/r20/fn_realnews_blockpost.xml"),
         FeedSource("뉴시스 IT·바이오", "https://www.newsis.com/RSS/health.xml"),
-    ],
-    "지원 기업 · 금융사 동향": [
-        FeedSource("뉴시스 금융", "https://www.newsis.com/RSS/bank.xml"),
-        FeedSource("파이낸셜뉴스 금융", "https://www.fnnews.com/rss/r20/fn_realnews_finance.xml"),
-        FeedSource("한국경제 증권", "https://www.hankyung.com/feed/finance"),
-        FeedSource("한국경제 경제", "https://www.hankyung.com/feed/economy"),
-        FeedSource("매일경제 기업·경영", "https://www.mk.co.kr/rss/50100032/"),
-    ],
-    "산업 · 기업 이슈": [
         FeedSource("매일경제 국제", "https://www.mk.co.kr/rss/30300018/"),
         FeedSource("매일경제 기업·경영", "https://www.mk.co.kr/rss/50100032/"),
         FeedSource("한국경제 국제", "https://www.hankyung.com/feed/international"),
         FeedSource("한국경제 경제", "https://www.hankyung.com/feed/economy"),
         FeedSource("파이낸셜뉴스 국제", "https://www.fnnews.com/rss/r20/fn_realnews_international.xml"),
         FeedSource("파이낸셜뉴스 산업", "https://www.fnnews.com/rss/r20/fn_realnews_industry.xml"),
+        FeedSource("정책브리핑 중소벤처기업부", "https://www.korea.kr/rss/dept_mss.xml"),
+        FeedSource("중소벤처기업부 보도자료", "https://mss.go.kr/rss/smba/board/86.do"),
     ],
 }
 
@@ -304,7 +292,7 @@ def parse_feed(category: str, source: FeedSource, data: bytes) -> tuple[list[dic
     return items, feed_title, bozo_error
 
 
-def collect_recent(hours: int, timeout: int, user_agent: str, verbose: bool) -> dict[str, Any]:
+def collect_recent(hours: int, timeout: int, user_agent: str, verbose: bool, max_per_category: int = 0) -> dict[str, Any]:
     generated_at = utc_now()
     cutoff = generated_at - timedelta(hours=hours)
 
@@ -360,6 +348,9 @@ def collect_recent(hours: int, timeout: int, user_agent: str, verbose: bool) -> 
     all_items: list[dict[str, Any]] = []
     for category, category_items in items_by_category.items():
         category_items.sort(key=lambda item: item["published_at"] or "", reverse=True)
+        if max_per_category:
+            items_by_category[category] = category_items[:max_per_category]
+            category_items = items_by_category[category]
         all_items.extend(category_items)
     all_items.sort(key=lambda item: item["published_at"] or "", reverse=True)
 
@@ -368,6 +359,7 @@ def collect_recent(hours: int, timeout: int, user_agent: str, verbose: bool) -> 
         "generated_at": iso_utc(generated_at),
         "generated_at_kst": generated_at.astimezone(KST).isoformat(),
         "window_hours": hours,
+        "max_per_category": max_per_category,
         "cutoff": iso_utc(cutoff),
         "cutoff_kst": cutoff.astimezone(KST).isoformat(),
         "categories": list(CATEGORIES.keys()),
@@ -390,6 +382,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hours", type=int, default=24, help="최근 몇 시간 안의 기사만 저장할지 지정합니다. 기본값: 24")
     parser.add_argument("--timeout", type=int, default=15, help="RSS 피드 하나당 요청 제한 시간(초). 기본값: 15")
     parser.add_argument("--output", default="news_recent_24h.json", help="저장할 JSON 파일 경로. 기본값: news_recent_24h.json")
+    parser.add_argument("--max-per-category", type=int, default=0, help="수집 단계에서 카테고리별 최대 후보 기사 수. 0이면 제한 없음")
     parser.add_argument("--verbose", action="store_true", help="예상 밖 예외의 traceback을 JSON에 포함합니다.")
     return parser.parse_args()
 
@@ -404,7 +397,13 @@ def main() -> int:
         return 2
 
     user_agent = "Mozilla/5.0 (compatible; KoreanNewsRSSCollector/1.0; +https://example.local)"
-    payload = collect_recent(hours=args.hours, timeout=args.timeout, user_agent=user_agent, verbose=args.verbose)
+    payload = collect_recent(
+        hours=args.hours,
+        timeout=args.timeout,
+        user_agent=user_agent,
+        verbose=args.verbose,
+        max_per_category=args.max_per_category,
+    )
     output_path = Path(args.output)
     save_json(payload, output_path)
 
