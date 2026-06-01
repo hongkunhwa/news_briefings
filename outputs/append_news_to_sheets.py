@@ -28,6 +28,12 @@ USED_NEWS_SHEET = "사용된뉴스"
 HISTORY_SHEET = "브리핑히스토리"
 USED_NEWS_HEADERS = ["발행일", "카테고리", "제목", "한국어 3줄 요약", "면접 질문", "원문 링크", "출처 매체"]
 HISTORY_HEADERS = ["발송시각", "기사건수", "상태"]
+CATEGORIES = ["거시경제·금융정책", "은행·금융산업", "금융권 주요 이슈"]
+DEFAULT_CATEGORY_LIMITS = {
+    "거시경제·금융정책": 4,
+    "은행·금융산업": 4,
+    "금융권 주요 이슈": 2,
+}
 
 
 def load_env_file(path: Path) -> None:
@@ -149,9 +155,28 @@ def ensure_headers(worksheet: Any, headers: list[str]) -> None:
         pass
 
 
-def prepared_news_rows(data: dict[str, Any]) -> list[list[str]]:
+def limited_items(data: dict[str, Any], apply_limits: bool) -> list[dict[str, Any]]:
+    items = [item for item in data.get("items", []) if str(item.get("summary_ko") or "").strip()]
+    if not apply_limits:
+        return items
+
+    grouped = {category: [] for category in CATEGORIES}
+    for item in items:
+        category = item.get("category")
+        if category in grouped:
+            grouped[category].append(item)
+
+    limited: list[dict[str, Any]] = []
+    for category in CATEGORIES:
+        category_items = grouped[category]
+        category_items.sort(key=lambda item: item.get("published_at") or "", reverse=True)
+        limited.extend(category_items[: DEFAULT_CATEGORY_LIMITS[category]])
+    return limited
+
+
+def prepared_news_rows(data: dict[str, Any], apply_category_limits: bool = True) -> list[list[str]]:
     rows: list[list[str]] = []
-    for item in data.get("items", []):
+    for item in limited_items(data, apply_limits=apply_category_limits):
         summary_ko = str(item.get("summary_ko") or "").strip()
         if not summary_ko:
             continue
@@ -185,7 +210,7 @@ def append_to_sheets(args: argparse.Namespace) -> int:
     env_path = Path(args.env)
     input_path = Path(args.input)
     data = json.loads(input_path.read_text(encoding="utf-8"))
-    news_rows = prepared_news_rows(data)
+    news_rows = prepared_news_rows(data, apply_category_limits=not args.no_category_limits)
     service_email_for_errors = service_email_from_env(env_path)
 
     try:
@@ -241,6 +266,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", default="outputs/news_recent_24h.json", help="요약/분류된 뉴스 JSON 경로")
     parser.add_argument("--env", default=".env", help="GOOGLE_CREDENTIALS_PATH와 SPREADSHEET_ID를 읽을 .env 경로")
     parser.add_argument("--allow-duplicates", action="store_true", help="이미 같은 원문 링크가 있어도 다시 추가")
+    parser.add_argument("--no-category-limits", action="store_true", help="Sheets에 전체 요약 기사를 누적하고 카테고리별 4/4/2 제한을 적용하지 않음")
     return parser.parse_args()
 
 
