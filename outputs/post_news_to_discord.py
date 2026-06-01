@@ -16,7 +16,7 @@ import textwrap
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +86,42 @@ def format_interview_questions(value: Any) -> str:
     return "\n".join(f"- {question}" for question in questions[:2])
 
 
+def format_interview_qa(questions_value: Any, answers_value: Any) -> str:
+    if isinstance(questions_value, list):
+        questions = [str(item).strip() for item in questions_value if str(item).strip()]
+    else:
+        questions = [line.strip(" -•\t") for line in str(questions_value or "").splitlines() if line.strip(" -•\t")]
+
+    if isinstance(answers_value, list):
+        answers = [str(item).strip() for item in answers_value if str(item).strip()]
+    else:
+        answers = [line.strip(" -•\t") for line in str(answers_value or "").splitlines() if line.strip(" -•\t")]
+
+    pairs: list[str] = []
+    for index, question in enumerate(questions[:2], start=1):
+        answer = answers[index - 1] if index - 1 < len(answers) else ""
+        if answer:
+            pairs.append(f"Q{index}. {question}\nA{index}. {answer}")
+        else:
+            pairs.append(f"Q{index}. {question}")
+    return "\n\n".join(pairs)
+
+
+def format_kst_datetime(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return "-"
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        kst_dt = dt.astimezone(timezone(timedelta(hours=9)))
+        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+        return f"{kst_dt:%Y-%m-%d} ({weekdays[kst_dt.weekday()]}) {kst_dt:%H:%M}"
+    except ValueError:
+        return raw[:16].replace("T", " ")
+
+
 def chunked(items: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]]:
     return [items[index : index + size] for index in range(0, len(items), size)]
 
@@ -112,12 +148,12 @@ def build_embed(item: dict[str, Any], category: str) -> dict[str, Any]:
     source = item.get("source") or item.get("feed_title") or "출처 미상"
     link = item.get("link") or ""
     summary_ko = normalize_multiline(item.get("summary_ko", ""), 3300)
-    interview_questions = format_interview_questions(item.get("interview_questions"))
-    published_at_kst = item.get("published_at_kst") or ""
+    interview_qa = format_interview_qa(item.get("interview_questions"), item.get("interview_answers"))
+    published_at_kst = format_kst_datetime(item.get("published_at_kst") or item.get("published_at"))
 
     description_parts = [f"**요약**\n{summary_ko}" if summary_ko else ""]
-    if interview_questions:
-        description_parts.append(f"**면접 질문**\n{interview_questions}")
+    if interview_qa:
+        description_parts.append(f"**면접 질문 및 답변**\n{interview_qa}")
     if link:
         description_parts.append(f"[원문 출처 링크]({link})")
     description = "\n\n".join(part for part in description_parts if part)
