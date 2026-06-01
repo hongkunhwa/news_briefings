@@ -19,14 +19,14 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 
 USED_NEWS_SHEET = "사용된뉴스"
 HISTORY_SHEET = "브리핑히스토리"
-USED_NEWS_HEADERS = ["발행일", "카테고리", "제목", "한국어 3줄 요약", "면접 질문", "원문 링크", "출처 매체"]
+USED_NEWS_HEADERS = ["발행일", "카테고리", "제목", "한국어 3줄 요약", "면접 질문", "면접 답변", "원문 링크", "출처 매체"]
 HISTORY_HEADERS = ["발송시각", "기사건수", "상태"]
 CATEGORIES = ["거시경제·금융정책", "은행·금융산업", "금융권 주요 이슈"]
 DEFAULT_CATEGORY_LIMITS = {
@@ -185,13 +185,19 @@ def prepared_news_rows(data: dict[str, Any], apply_category_limits: bool = True)
             questions_text = "\n".join(str(question).strip() for question in questions if str(question).strip())
         else:
             questions_text = str(questions).strip()
+        answers = item.get("interview_answers") or []
+        if isinstance(answers, list):
+            answers_text = "\n".join(str(answer).strip() for answer in answers if str(answer).strip())
+        else:
+            answers_text = str(answers).strip()
         rows.append(
             [
-                str(item.get("published_at_kst") or item.get("published_at") or ""),
+                format_kst_datetime(item.get("published_at_kst") or item.get("published_at")),
                 str(item.get("category") or ""),
                 str(item.get("title") or ""),
                 summary_ko,
                 questions_text,
+                answers_text,
                 str(item.get("link") or ""),
                 str(item.get("source") or item.get("feed_title") or ""),
             ]
@@ -199,10 +205,25 @@ def prepared_news_rows(data: dict[str, Any], apply_category_limits: bool = True)
     return rows
 
 
+def format_kst_datetime(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        kst_dt = dt.astimezone(timezone(timedelta(hours=9)))
+        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+        return f"{kst_dt:%Y-%m-%d} ({weekdays[kst_dt.weekday()]}) {kst_dt:%H:%M}"
+    except ValueError:
+        return raw[:16].replace("T", " ")
+
+
 def existing_links(worksheet: Any) -> set[str]:
     # Older sheets had "원문 링크" in column E. New sheets use column F after
     # adding "면접 질문", so check both to avoid duplicate appends after upgrade.
-    values = worksheet.col_values(5) + worksheet.col_values(6)
+    values = worksheet.col_values(5) + worksheet.col_values(6) + worksheet.col_values(7)
     return {value.strip() for value in values[1:] if value.strip().startswith(("http://", "https://"))}
 
 
@@ -216,7 +237,7 @@ def append_to_sheets(args: argparse.Namespace) -> int:
     try:
         spreadsheet, _gspread, service_email = open_spreadsheet(env_path)
         service_email_for_errors = service_email or service_email_for_errors
-        used_news = get_or_create_worksheet(spreadsheet, USED_NEWS_SHEET, rows=max(len(news_rows) + 10, 1000), cols=7)
+        used_news = get_or_create_worksheet(spreadsheet, USED_NEWS_SHEET, rows=max(len(news_rows) + 10, 1000), cols=8)
         history = get_or_create_worksheet(spreadsheet, HISTORY_SHEET, rows=1000, cols=3)
         ensure_headers(used_news, USED_NEWS_HEADERS)
         ensure_headers(history, HISTORY_HEADERS)
@@ -227,7 +248,7 @@ def append_to_sheets(args: argparse.Namespace) -> int:
             used_links = existing_links(used_news)
             deduped_rows: list[list[str]] = []
             for row in news_rows:
-                link = row[5].strip()
+                link = row[6].strip()
                 if link and link in used_links:
                     skipped += 1
                     continue
