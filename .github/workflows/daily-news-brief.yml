@@ -11,9 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-      LLM_PROVIDER: openai
-      LLM_API_URL: https://openrouter.ai/api/v1/chat/completions
-      LLM_MODEL: openai/gpt-4o-mini
+      LLM_PROVIDER: gemini
+      LLM_MODEL: gemini-2.5-flash
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
       SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
