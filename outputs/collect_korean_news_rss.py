@@ -190,6 +190,109 @@ FINANCE_KEYWORDS = (
     "수출",
 )
 
+CATEGORY_PRIORITY_KEYWORDS = {
+    "거시경제·금융정책": (
+        "기준금리",
+        "금리",
+        "통화정책",
+        "미국 연준",
+        "연준",
+        "Fed",
+        "물가",
+        "CPI",
+        "환율",
+        "GDP",
+        "고용지표",
+        "국채금리",
+        "한국은행",
+        "금융위원회",
+        "금융감독원",
+        "금융정책",
+        "금융규제",
+        "DSR",
+        "스트레스 DSR",
+        "가계부채",
+        "바젤",
+        "금융소비자보호",
+    ),
+    "은행·금융산업": (
+        "은행",
+        "은행권",
+        "금융지주",
+        "은행 실적",
+        "실적",
+        "NIM",
+        "순이자마진",
+        "연체율",
+        "충당금",
+        "대손비용",
+        "가계대출",
+        "기업대출",
+        "예대금리차",
+        "수익성",
+        "여신",
+        "수신",
+        "저축은행",
+        "KB금융",
+        "신한금융",
+        "하나금융",
+        "우리금융",
+        "NH농협금융",
+        "IBK기업은행",
+        "기업은행",
+    ),
+    "금융권 주요 이슈": (
+        "생성형 AI",
+        "금융 AI",
+        "AI",
+        "핀테크",
+        "마이데이터",
+        "오픈뱅킹",
+        "디지털",
+        "DX",
+        "인터넷은행",
+        "카카오뱅크",
+        "토스",
+        "케이뱅크",
+        "반도체",
+        "배터리",
+        "자동차",
+        "조선",
+        "부동산",
+        "중소기업",
+        "수출",
+        "증시",
+        "코스피",
+        "ETF",
+        "ESG",
+        "상생금융",
+        "해외진출",
+        "신사업",
+    ),
+}
+
+
+def keyword_score(text: str, keywords: tuple[str, ...]) -> int:
+    haystack = text.lower()
+    score = 0
+    for keyword in keywords:
+        keyword_text = keyword.lower()
+        if keyword_text in haystack:
+            score += 1 + haystack.count(keyword_text)
+    return score
+
+
+def category_priority_score(item: dict[str, Any], category: str) -> int:
+    keywords = CATEGORY_PRIORITY_KEYWORDS.get(category, ())
+    title = str(item.get("title") or "")
+    summary = str(item.get("summary") or "")
+    source = f"{item.get('source', '')} {item.get('feed_title', '')}"
+    return (
+        keyword_score(title, keywords) * 4
+        + keyword_score(source, keywords) * 2
+        + keyword_score(summary, keywords)
+    )
+
 
 def is_relevant_finance_item(item: dict[str, Any]) -> bool:
     source = str(item.get("source") or "")
@@ -333,6 +436,7 @@ def collect_recent(hours: int, timeout: int, user_agent: str, verbose: bool, max
                     if dedupe_key in seen:
                         continue
                     seen.add(dedupe_key)
+                    item["category_priority_score"] = category_priority_score(item, category)
                     items_by_category[category].append(item)
                     result["recent_items"] += 1
 
@@ -347,7 +451,10 @@ def collect_recent(hours: int, timeout: int, user_agent: str, verbose: bool, max
 
     all_items: list[dict[str, Any]] = []
     for category, category_items in items_by_category.items():
-        category_items.sort(key=lambda item: item["published_at"] or "", reverse=True)
+        category_items.sort(
+            key=lambda item: (item.get("category_priority_score", 0), item["published_at"] or ""),
+            reverse=True,
+        )
         if max_per_category:
             items_by_category[category] = category_items[:max_per_category]
             category_items = items_by_category[category]
