@@ -143,7 +143,12 @@ def normalize_interview_answers(value: Any) -> list[str]:
 
 
 def parse_llm_content(content: str) -> dict[str, Any]:
-    parsed = json.loads(strip_code_fence(content))
+    cleaned_content = strip_code_fence(content)
+    try:
+        parsed = json.loads(cleaned_content)
+    except json.JSONDecodeError as exc:
+        preview = cleaned_content[:500].replace("\r", "\\r").replace("\n", "\\n")
+        raise ValueError(f"LLM JSON parse failed: {exc}. Response preview: {preview}") from exc
     summary_ko = normalize_summary(str(parsed.get("summary_ko", "")))
     category = str(parsed.get("category", "")).strip()
     if category not in CATEGORIES:
@@ -242,6 +247,9 @@ def call_gemini_llm(
             "temperature": 0.2,
             "maxOutputTokens": max_tokens,
             "responseMimeType": "application/json",
+            "thinkingConfig": {
+                "thinkingBudget": 0,
+            },
         },
     }
     request = urllib.request.Request(
@@ -263,7 +271,11 @@ def call_gemini_llm(
         raise RuntimeError(f"Gemini HTTP {exc.code}: {error_body[:1000]}") from exc
 
     payload = json.loads(response_body)
-    content = payload["candidates"][0]["content"]["parts"][0]["text"]
+    candidate = payload["candidates"][0]
+    finish_reason = candidate.get("finishReason", "")
+    if finish_reason == "MAX_TOKENS":
+        raise RuntimeError("Gemini response was cut off at maxOutputTokens. Increase --max-tokens.")
+    content = candidate["content"]["parts"][0]["text"]
     return parse_llm_content(content)
 
 
@@ -397,7 +409,7 @@ def summarize_items(args: argparse.Namespace) -> int:
                 except Exception as retry_exc:
                     if attempt >= args.retries or not is_retryable_error(retry_exc):
                         raise
-                    wait_seconds = args.retry_sleep * (2**attempt)
+                    wait_seconds = args.retry_sleep
                     print(f"[{idx}/{total}] 재시도 대기 {wait_seconds:.1f}초: {type(retry_exc).__name__}: {retry_exc}", flush=True)
                     time.sleep(wait_seconds)
 
