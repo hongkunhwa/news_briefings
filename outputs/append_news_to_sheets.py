@@ -34,6 +34,22 @@ DEFAULT_CATEGORY_LIMITS = {
     "은행·금융산업": 4,
     "금융권 주요 이슈": 2,
 }
+MAIN_CATEGORIES = CATEGORIES[:2]
+ISSUE_CATEGORY = CATEGORIES[2]
+ISSUE_CATEGORY_EXPANDED_LIMIT = 6
+
+
+def effective_category_limits(grouped: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
+    limits = dict(DEFAULT_CATEGORY_LIMITS)
+    unused_main_slots = sum(
+        max(0, DEFAULT_CATEGORY_LIMITS[category] - len(grouped.get(category, []))) for category in MAIN_CATEGORIES
+    )
+    if unused_main_slots and grouped.get(ISSUE_CATEGORY):
+        limits[ISSUE_CATEGORY] = min(
+            ISSUE_CATEGORY_EXPANDED_LIMIT,
+            DEFAULT_CATEGORY_LIMITS[ISSUE_CATEGORY] + unused_main_slots,
+        )
+    return limits
 
 
 def load_env_file(path: Path) -> None:
@@ -166,11 +182,12 @@ def limited_items(data: dict[str, Any], apply_limits: bool) -> list[dict[str, An
         if category in grouped:
             grouped[category].append(item)
 
+    limits = effective_category_limits(grouped)
     limited: list[dict[str, Any]] = []
     for category in CATEGORIES:
         category_items = grouped[category]
         category_items.sort(key=lambda item: item.get("published_at") or "", reverse=True)
-        limited.extend(category_items[: DEFAULT_CATEGORY_LIMITS[category]])
+        limited.extend(category_items[: limits[category]])
     return limited
 
 
