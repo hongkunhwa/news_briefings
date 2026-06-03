@@ -26,6 +26,9 @@ except ImportError:
     requests = None
 
 
+KST = timezone(timedelta(hours=9))
+
+
 CATEGORIES = [
     "거시경제·금융정책",
     "은행·금융산업",
@@ -224,9 +227,10 @@ def post_webhook(webhook_url: str, payload: dict[str, Any], timeout: int) -> Non
 def build_messages(grouped: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     total = sum(len(items) for items in grouped.values())
+    brief_time = datetime.now(timezone.utc).astimezone(KST).strftime("%Y-%m-%d %H:%M")
     header = {
         "content": (
-            f"금융권·은행권 뉴스 브리핑 · {datetime.now(timezone.utc).astimezone().strftime('%Y-%m-%d %H:%M')}\n"
+            f"금융권·은행권 뉴스 브리핑 · {brief_time}\n"
             f"총 {total}건"
         ),
         "allowed_mentions": {"parse": []},
