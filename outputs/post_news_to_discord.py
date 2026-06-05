@@ -12,11 +12,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import textwrap
 import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +62,80 @@ def effective_category_limits(grouped: dict[str, list[dict[str, Any]]]) -> dict[
             DEFAULT_CATEGORY_LIMITS[ISSUE_CATEGORY] + unused_main_slots,
         )
     return limits
+
+
+TOPIC_STOPWORDS = {
+    "속보",
+    "단독",
+    "종합",
+    "종합1보",
+    "종합2보",
+    "1보",
+    "2보",
+    "3보",
+    "차기",
+    "전",
+    "현",
+    "관련",
+    "기자",
+    "뉴스",
+    "금융권",
+    "은행권",
+    "업계",
+}
+
+
+def normalize_topic_text(text: str) -> str:
+    cleaned = str(text or "")
+    replacements = {
+        "여신금융협회": "여신협회",
+        "KB 금융": "KB금융",
+        "非": "비",
+    }
+    for old, new in replacements.items():
+        cleaned = cleaned.replace(old, new)
+    cleaned = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", cleaned)
+    cleaned = re.sub(r"[^0-9A-Za-z가-힣]+", " ", cleaned).lower()
+    return " ".join(cleaned.split())
+
+
+def topic_tokens(item: dict[str, Any]) -> set[str]:
+    normalized = normalize_topic_text(str(item.get("title") or ""))
+    tokens: set[str] = set()
+    for token in re.findall(r"[0-9a-z가-힣]{2,}", normalized):
+        token = re.sub(r"(에는|에서|으로|에게|까지|부터|에도|이다|한다|했다|됐다|되다|에|은|는|이|가|을|를|의|와|과|로)$", "", token)
+        if len(token) >= 2 and token not in TOPIC_STOPWORDS:
+            tokens.add(token)
+    return tokens
+
+
+def is_similar_topic(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_title = normalize_topic_text(str(left.get("title") or ""))
+    right_title = normalize_topic_text(str(right.get("title") or ""))
+    if not left_title or not right_title:
+        return False
+    if left_title in right_title or right_title in left_title:
+        return True
+    title_similarity = SequenceMatcher(None, left_title, right_title).ratio()
+    if title_similarity >= 0.72:
+        return True
+
+    left_tokens = topic_tokens(left)
+    right_tokens = topic_tokens(right)
+    if not left_tokens or not right_tokens:
+        return False
+    common = left_tokens & right_tokens
+    overlap = len(common) / max(1, min(len(left_tokens), len(right_tokens)))
+    return len(common) >= 2 and (overlap >= 0.4 or title_similarity >= 0.5)
+
+
+def dedupe_similar_topics(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    kept: list[dict[str, Any]] = []
+    for item in items:
+        if any(is_similar_topic(item, existing) for existing in kept):
+            continue
+        kept.append(item)
+    return kept
 
 
 def load_env_file(path: Path) -> None:
@@ -147,20 +223,29 @@ def chunked(items: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]
 
 def category_groups(data: dict[str, Any], limit_per_category: int = 0) -> dict[str, list[dict[str, Any]]]:
     grouped = {category: [] for category in CATEGORIES}
+    candidate_items: list[dict[str, Any]] = []
     for item in data.get("items", []):
         category = item.get("category")
         if category not in grouped:
             continue
         if not item.get("summary_ko"):
             continue
+        candidate_items.append(item)
+
+    candidate_items.sort(key=lambda item: item.get("published_at") or "", reverse=True)
+    for item in dedupe_similar_topics(candidate_items):
+        category = item.get("category")
         grouped[category].append(item)
+
+    for category, items in grouped.items():
+        items.sort(key=lambda item: item.get("published_at") or "", reverse=True)
 
     limits = effective_category_limits(grouped) if not limit_per_category else {}
     for category, items in grouped.items():
-        items.sort(key=lambda item: item.get("published_at") or "", reverse=True)
         limit = limit_per_category or limits.get(category, 0)
         if limit:
-            grouped[category] = items[:limit]
+            items = items[:limit]
+        grouped[category] = items
     return grouped
 
 
