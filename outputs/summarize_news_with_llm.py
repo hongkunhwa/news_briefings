@@ -331,6 +331,19 @@ def is_retryable_error(exc: Exception) -> bool:
     return any(marker in text for marker in retry_markers)
 
 
+def retry_delay_seconds(exc: Exception, fallback_seconds: float) -> float:
+    text = str(exc)
+    seconds_match = re.search(r"please retry in\s+([0-9.]+)\s*s", text, flags=re.IGNORECASE)
+    if seconds_match:
+        return max(fallback_seconds, float(seconds_match.group(1)) + 2.0)
+
+    millis_match = re.search(r"please retry in\s+([0-9.]+)\s*ms", text, flags=re.IGNORECASE)
+    if millis_match:
+        return max(fallback_seconds, (float(millis_match.group(1)) / 1000.0) + 2.0)
+
+    return fallback_seconds
+
+
 def rebuild_items_by_category(data: dict[str, Any]) -> None:
     items_by_category = {category: [] for category in CATEGORIES}
     for item in data.get("items", []):
@@ -409,7 +422,7 @@ def summarize_items(args: argparse.Namespace) -> int:
                 except Exception as retry_exc:
                     if attempt >= args.retries or not is_retryable_error(retry_exc):
                         raise
-                    wait_seconds = args.retry_sleep
+                    wait_seconds = retry_delay_seconds(retry_exc, args.retry_sleep)
                     print(f"[{idx}/{total}] 재시도 대기 {wait_seconds:.1f}초: {type(retry_exc).__name__}: {retry_exc}", flush=True)
                     time.sleep(wait_seconds)
 
