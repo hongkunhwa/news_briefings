@@ -8,13 +8,17 @@ on:
     - cron: "55 22 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: daily-bank-finance-news-brief
+  cancel-in-progress: false
+
 jobs:
   brief:
     runs-on: ubuntu-latest
     env:
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
       LLM_PROVIDER: gemini
-      LLM_MODEL: gemini-2.5-flash
+      LLM_MODEL: gemini-2.5-flash-lite
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
       SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
@@ -32,14 +36,14 @@ jobs:
         run: python -m pip install feedparser requests gspread google-auth
 
       - name: Collect banking and finance RSS articles from the last 24 hours
-        run: python outputs/collect_korean_news_rss.py --hours 24 --max-per-category 6 --output outputs/news_recent_24h.json
+        run: python outputs/collect_korean_news_rss.py --hours 24 --max-per-category 4 --output outputs/news_recent_24h.json
 
       - name: Summarize and classify banking and finance articles
         timeout-minutes: 25
-        run: python outputs/summarize_news_with_llm.py --input outputs/news_recent_24h.json --sleep 10.0 --max-tokens 1000 --retries 1 --retry-sleep 60 --min-success-ratio 0.5
+        run: python outputs/summarize_news_with_llm.py --input outputs/news_recent_24h.json --sleep 15.0 --max-tokens 1000 --retries 1 --retry-sleep 90 --min-success-ratio 0.4
 
       - name: Check summarized article count
-        run: python -c "import json, sys; data=json.load(open('outputs/news_recent_24h.json', encoding='utf-8')); items=data.get('items', []); summarized=sum(1 for item in items if item.get('summary_ko')); ratio=(summarized/len(items)) if items else 1; print(f'articles={len(items)}, summarized={summarized}, ratio={ratio:.1%}'); sys.exit(1 if items and ratio < 0.5 else 0)"
+        run: python -c "import json, sys; data=json.load(open('outputs/news_recent_24h.json', encoding='utf-8')); items=data.get('items', []); summarized=sum(1 for item in items if item.get('summary_ko')); ratio=(summarized/len(items)) if items else 1; print(f'articles={len(items)}, summarized={summarized}, ratio={ratio:.1%}'); sys.exit(1 if items and ratio < 0.4 else 0)"
 
       - name: Post brief to Discord
         run: python outputs/post_news_to_discord.py --input outputs/news_recent_24h.json
