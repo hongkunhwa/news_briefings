@@ -51,6 +51,8 @@ CATEGORIES: dict[str, list[FeedSource]] = {
         FeedSource("한국은행 보도자료(통화정책)", "https://www.bok.or.kr/portal/bbs/P0000559/news.rss?menuNo=200690"),
         FeedSource("한국은행 보도자료(경제통계)", "https://www.bok.or.kr/portal/bbs/B0000501/news.rss?menuNo=201264"),
         FeedSource("한국은행 경제전망보고서", "https://www.bok.or.kr/portal/bbs/P0002359/news.rss?menuNo=200066"),
+        FeedSource("금융위원회 보도자료", "http://www.fsc.go.kr/about/fsc_bbs_rss/?fid=0111"),
+        FeedSource("금융위원회 보도설명자료", "http://www.fsc.go.kr/about/fsc_bbs_rss/?fid=0112"),
         FeedSource("정책브리핑 금융위원회", "https://www.korea.kr/rss/dept_fsc.xml"),
         FeedSource("정책브리핑 보도자료", "https://www.korea.kr/rss/pressrelease.xml"),
         FeedSource("한국경제 경제", "https://www.hankyung.com/feed/economy"),
