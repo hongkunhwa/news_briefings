@@ -170,6 +170,49 @@ def parse_llm_content(content: str) -> dict[str, Any]:
     }
 
 
+def normalize_batch_result(parsed: dict[str, Any]) -> dict[str, Any]:
+    summary_ko = normalize_summary(str(parsed.get("summary_ko", "")))
+    category = str(parsed.get("category", "")).strip()
+    if category not in CATEGORIES:
+        raise ValueError(f"LLM returned an unsupported category: {category!r}")
+
+    interview_questions = normalize_interview_questions(parsed.get("interview_questions"))
+    if not interview_questions:
+        interview_questions = [
+            f"이 뉴스가 {category} 관점에서 은행권에 주는 영향은?",
+            "면접에서 이 이슈를 어떤 관점으로 설명할 수 있을까?",
+        ]
+    interview_answers = normalize_interview_answers(parsed.get("interview_answers"))
+    while len(interview_answers) < len(interview_questions):
+        interview_answers.append("기사의 핵심 변화가 은행의 수익성, 리스크 관리, 고객 대응에 어떤 영향을 주는지 연결해 답변하면 좋습니다.")
+    return {
+        "summary_ko": summary_ko,
+        "category": category,
+        "interview_questions": interview_questions,
+        "interview_answers": interview_answers[: len(interview_questions)],
+    }
+
+
+def parse_batch_llm_content(content: str) -> dict[int, dict[str, Any]]:
+    cleaned_content = strip_code_fence(content)
+    try:
+        parsed = json.loads(cleaned_content)
+    except json.JSONDecodeError as exc:
+        preview = cleaned_content[:500].replace("\r", "\\r").replace("\n", "\\n")
+        raise ValueError(f"LLM batch JSON parse failed: {exc}. Response preview: {preview}") from exc
+
+    results = parsed.get("results") if isinstance(parsed, dict) else parsed
+    if not isinstance(results, list):
+        raise ValueError("LLM batch response must contain a results array.")
+
+    normalized: dict[int, dict[str, Any]] = {}
+    for row in results:
+        if not isinstance(row, dict) or "id" not in row:
+            continue
+        normalized[int(row["id"])] = normalize_batch_result(row)
+    return normalized
+
+
 def call_openai_compatible_llm(
     *,
     api_url: str,
@@ -279,6 +322,66 @@ def call_gemini_llm(
     return parse_llm_content(content)
 
 
+def call_gemini_batch_llm(
+    *,
+    api_key: str,
+    model: str,
+    prompt: str,
+    max_tokens: int,
+    timeout: int,
+) -> dict[int, dict[str, Any]]:
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    body = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": (
+                            "You are a Korean banking and finance news analyst. "
+                            "Return valid JSON only.\n\n"
+                            + prompt
+                        )
+                    }
+                ],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": max_tokens,
+            "responseMimeType": "application/json",
+            "thinkingConfig": {
+                "thinkingBudget": 0,
+            },
+        },
+    }
+    request = urllib.request.Request(
+        api_url,
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            response_body = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gemini HTTP {exc.code}: {error_body[:1000]}") from exc
+
+    payload = json.loads(response_body)
+    candidate = payload["candidates"][0]
+    finish_reason = candidate.get("finishReason", "")
+    if finish_reason == "MAX_TOKENS":
+        raise RuntimeError("Gemini batch response was cut off at maxOutputTokens. Increase --max-tokens.")
+    content = candidate["content"]["parts"][0]["text"]
+    return parse_batch_llm_content(content)
+
+
 def build_prompt(item: dict[str, Any]) -> str:
     source_category = item.get("source_category") or item.get("category") or ""
     return PROMPT_TEMPLATE.format(
@@ -287,6 +390,36 @@ def build_prompt(item: dict[str, Any]) -> str:
         source=str(item.get("source", "")),
         published_at_kst=str(item.get("published_at_kst", "")),
         summary=str(item.get("summary", ""))[:3500],
+    )
+
+
+def build_batch_prompt(items: list[dict[str, Any]]) -> str:
+    articles: list[dict[str, str | int]] = []
+    for article_id, item in enumerate(items):
+        source_category = item.get("source_category") or item.get("category") or ""
+        articles.append(
+            {
+                "id": article_id,
+                "title": str(item.get("title", ""))[:500],
+                "source_category": str(source_category),
+                "source": str(item.get("source", "")),
+                "published_at_kst": str(item.get("published_at_kst", "")),
+                "summary": str(item.get("summary", ""))[:1800],
+            }
+        )
+
+    return (
+        "다음 한국 금융권/은행권 뉴스 기사들을 각각 처리해서 JSON만 출력해줘.\n"
+        "각 기사마다 summary_ko, category, interview_questions, interview_answers를 만들어야 한다.\n"
+        "summary_ko는 한국어 3줄이며 사실/맥락/시사점 순서로 쓰되 '사실:', '맥락:', '시사점:' 같은 라벨은 붙이지 않는다.\n"
+        "category는 다음 중 하나만 고른다: "
+        + ", ".join(CATEGORIES)
+        + "\n"
+        "interview_questions는 기사 기반 은행권 면접 질문 2개 배열이다.\n"
+        "interview_answers는 각 질문에 대한 한국어 답변 2개 배열이며, 답변당 1~2문장으로 쓴다.\n"
+        '출력 형식은 반드시 {"results":[{"id":0,"summary_ko":"...","category":"...","interview_questions":["...","..."],"interview_answers":["...","..."]}]} 이다.\n'
+        "입력 기사 JSON:\n"
+        + json.dumps(articles, ensure_ascii=False)
     )
 
 
@@ -311,6 +444,23 @@ def call_llm(
         max_tokens=max_tokens,
         timeout=timeout,
     )
+
+
+def call_llm_batch(
+    *,
+    provider: str,
+    api_url: str,
+    api_key: str,
+    model: str,
+    items: list[dict[str, Any]],
+    max_tokens: int,
+    timeout: int,
+) -> dict[int, dict[str, Any]]:
+    prompt = build_batch_prompt(items)
+    if provider == "gemini":
+        return call_gemini_batch_llm(api_key=api_key, model=model, prompt=prompt, max_tokens=max_tokens, timeout=timeout)
+
+    raise RuntimeError("Batch mode is currently supported only for Gemini.")
 
 
 def is_retryable_error(exc: Exception) -> bool:
@@ -400,6 +550,93 @@ def summarize_items(args: argparse.Namespace) -> int:
     print(f"최대 출력 토큰: {args.max_tokens}")
     print(f"요약 대상: {total}건")
 
+    if args.batch_size > 1:
+        success_count = 0
+        failure_count = 0
+        batch_size = max(1, args.batch_size)
+        for batch_start in range(0, total, batch_size):
+            batch = targets[batch_start : batch_start + batch_size]
+            batch_number = (batch_start // batch_size) + 1
+            batch_total = (total + batch_size - 1) // batch_size
+            print(f"[batch {batch_number}/{batch_total}] 요청 중: {len(batch)}건", flush=True)
+            try:
+                batch_results = None
+                for attempt in range(args.retries + 1):
+                    try:
+                        batch_results = call_llm_batch(
+                            provider=provider,
+                            api_url=api_url,
+                            api_key=api_key,
+                            model=model,
+                            items=batch,
+                            max_tokens=args.max_tokens,
+                            timeout=args.timeout,
+                        )
+                        break
+                    except Exception as retry_exc:
+                        if attempt >= args.retries or not is_retryable_error(retry_exc):
+                            raise
+                        wait_seconds = retry_delay_seconds(retry_exc, args.retry_sleep)
+                        print(
+                            f"[batch {batch_number}/{batch_total}] 재시도 대기 {wait_seconds:.1f}초: "
+                            f"{type(retry_exc).__name__}: {retry_exc}",
+                            flush=True,
+                        )
+                        time.sleep(wait_seconds)
+
+                if batch_results is None:
+                    raise RuntimeError("LLM batch response was empty.")
+
+                for local_index, item in enumerate(batch):
+                    title = str(item.get("title", "")).replace("\n", " ")[:60]
+                    result = batch_results.get(local_index)
+                    if not result:
+                        item["summary_error"] = "Batch result missing for this article."
+                        failure_count += 1
+                        print(f"[{batch_start + local_index + 1}/{total}] 실패: {title} -> {item['summary_error']}", flush=True)
+                        continue
+                    item["summary_ko"] = result["summary_ko"]
+                    item["category"] = result["category"]
+                    item["interview_questions"] = result["interview_questions"]
+                    item["interview_answers"] = result["interview_answers"]
+                    item.pop("summary_error", None)
+                    success_count += 1
+                    print(f"[{batch_start + local_index + 1}/{total}] 완료: {result['category']} / {title}", flush=True)
+            except Exception as exc:  # noqa: BLE001 - one bad batch must not stop the file save.
+                for item in batch:
+                    item["summary_error"] = f"{type(exc).__name__}: {exc}"
+                    failure_count += 1
+                print(f"[batch {batch_number}/{batch_total}] 실패: {type(exc).__name__}: {exc}", flush=True)
+
+            data["llm_summary"] = {
+                "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "provider": provider,
+                "model": model,
+                "api_url": api_url,
+                "max_tokens": args.max_tokens,
+                "sleep_seconds": args.sleep,
+                "batch_size": args.batch_size,
+                "processed_target_count": total,
+            }
+            rebuild_items_by_category(data)
+            atomic_write_json(input_path, data)
+            if batch_start + batch_size < total and args.sleep > 0:
+                time.sleep(args.sleep)
+
+        print(f"저장 완료: {input_path.resolve()}")
+        print(f"요약 성공: {success_count}건")
+        print(f"요약 실패: {failure_count}건")
+        if total > 0 and success_count == 0:
+            print("요약된 기사가 0건이라 다음 단계로 진행할 수 없습니다. 위의 첫 실패 원인을 확인하세요.")
+            return 1
+        if total > 0:
+            success_ratio = success_count / total
+            print(f"요약 성공률: {success_ratio:.1%}")
+            if success_ratio < args.min_success_ratio:
+                print(f"요약 성공률이 기준({args.min_success_ratio:.0%})보다 낮아 다음 단계로 진행하지 않습니다.")
+                return 1
+        return 0
+
     success_count = 0
     failure_count = 0
     for idx, item in enumerate(targets, start=1):
@@ -481,6 +718,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--retry-sleep", type=float, default=5.0, help="재시도 기본 대기 시간(초). 기본값: 5.0")
     parser.add_argument("--min-success-ratio", type=float, default=0.8, help="다음 단계로 진행할 최소 요약 성공률. 기본값: 0.8")
     parser.add_argument("--limit", type=int, default=0, help="테스트용 처리 개수 제한. 0이면 전체 처리")
+    parser.add_argument("--batch-size", type=int, default=1, help="Gemini 배치 요약 기사 수. 1이면 기사별 요청")
     parser.add_argument("--force", action="store_true", help="이미 summary_ko가 있는 기사도 다시 처리")
     return parser.parse_args()
 
