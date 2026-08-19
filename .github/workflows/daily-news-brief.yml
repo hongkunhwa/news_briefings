@@ -1,5 +1,6 @@
 name: Daily Bank Finance News Brief
 
+# Maintained for daily scheduled news briefing automation.
 on:
   schedule:
     # Korea 07:55 = UTC 22:55 on the previous day.
