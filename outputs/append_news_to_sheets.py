@@ -28,6 +28,7 @@ from typing import Any
 
 USED_NEWS_SHEET = "사용된뉴스"
 HISTORY_SHEET = "브리핑히스토리"
+KST = timezone(timedelta(hours=9))
 USED_NEWS_HEADERS = ["발행일", "카테고리", "제목", "한국어 3줄 요약", "면접 질문", "면접 답변", "원문 링크", "출처 매체"]
 HISTORY_HEADERS = ["발송시각", "기사건수", "상태"]
 CATEGORIES = ["거시경제·금융정책", "은행·금융산업", "금융권 주요 이슈"]
@@ -363,7 +364,7 @@ def append_to_sheets(args: argparse.Namespace) -> int:
         if not news_rows:
             status = "요약된 기사 없음"
 
-        sent_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+        sent_at = datetime.now(timezone.utc).astimezone(KST).isoformat(timespec="seconds")
         history.append_row([sent_at, len(rows_to_append), status], value_input_option="USER_ENTERED")
 
     except Exception as exc:  # noqa: BLE001 - turn Sheets API errors into actionable messages.
