@@ -38,6 +38,7 @@ except ImportError:
 
 
 KST = timezone(timedelta(hours=9), "KST")
+STOCK_CATEGORY = "주식/증시"
 
 
 @dataclass(frozen=True)
@@ -67,21 +68,16 @@ CATEGORIES: dict[str, list[FeedSource]] = {
         FeedSource("매일경제 기업·경영", "https://www.mk.co.kr/rss/50100032/"),
         FeedSource("매일경제 증권", "https://www.mk.co.kr/rss/50200011/"),
     ],
-    "금융권 주요 이슈": [
-        FeedSource("과기정통부 보도자료", "https://www.msit.go.kr/user/rss/rss.do?bbsSeqNo=94"),
-        FeedSource("과기정통부 정보통신", "https://www.msit.go.kr/user/rss/rss.do?bbsSeqNo=67"),
-        FeedSource("한국경제 IT", "https://www.hankyung.com/feed/it"),
-        FeedSource("파이낸셜뉴스 IT", "https://www.fnnews.com/rss/r20/fn_realnews_it.xml"),
-        FeedSource("파이낸셜뉴스 블록포스트", "https://www.fnnews.com/rss/r20/fn_realnews_blockpost.xml"),
-        FeedSource("뉴시스 IT·바이오", "https://www.newsis.com/RSS/health.xml"),
-        FeedSource("매일경제 국제", "https://www.mk.co.kr/rss/30300018/"),
-        FeedSource("매일경제 기업·경영", "https://www.mk.co.kr/rss/50100032/"),
+    STOCK_CATEGORY: [
+        FeedSource("한국경제 증권", "https://www.hankyung.com/feed/finance"),
         FeedSource("한국경제 국제", "https://www.hankyung.com/feed/international"),
         FeedSource("한국경제 경제", "https://www.hankyung.com/feed/economy"),
+        FeedSource("한국경제 IT", "https://www.hankyung.com/feed/it"),
+        FeedSource("매일경제 증권", "https://www.mk.co.kr/rss/50200011/"),
+        FeedSource("매일경제 국제", "https://www.mk.co.kr/rss/30300018/"),
+        FeedSource("매일경제 기업·경영", "https://www.mk.co.kr/rss/50100032/"),
         FeedSource("파이낸셜뉴스 국제", "https://www.fnnews.com/rss/r20/fn_realnews_international.xml"),
         FeedSource("파이낸셜뉴스 산업", "https://www.fnnews.com/rss/r20/fn_realnews_industry.xml"),
-        FeedSource("정책브리핑 중소벤처기업부", "https://www.korea.kr/rss/dept_mss.xml"),
-        FeedSource("중소벤처기업부 보도자료", "https://mss.go.kr/rss/smba/board/86.do"),
     ],
 }
 
@@ -245,33 +241,64 @@ CATEGORY_PRIORITY_KEYWORDS = {
         "IBK기업은행",
         "기업은행",
     ),
-    "금융권 주요 이슈": (
-        "생성형 AI",
-        "금융 AI",
-        "AI",
-        "핀테크",
-        "마이데이터",
-        "오픈뱅킹",
-        "디지털",
-        "DX",
-        "인터넷은행",
-        "카카오뱅크",
-        "토스",
-        "케이뱅크",
+    STOCK_CATEGORY: (
+        "기업 실적", "실적 발표", "영업이익", "순이익", "매출", "가이던스",
+        "어닝", "업황", "수주", "공급망", "설비투자",
         "반도체",
         "배터리",
         "자동차",
         "조선",
-        "부동산",
-        "중소기업",
         "수출",
         "증시",
         "코스피",
-        "ETF",
-        "ESG",
-        "상생금융",
-        "해외진출",
-        "신사업",
+        "코스닥", "나스닥", "S&P500", "S&P 500", "다우", "뉴욕증시", "미국 증시", "빅테크",
+    ),
+}
+
+
+STOCK_MARKET_KEYWORDS = (
+    "증시", "주식시장", "코스피", "코스닥", "나스닥", "s&p500", "s&p 500",
+    "다우", "뉴욕증시", "주가지수", "kospi", "kosdaq", "nasdaq", "wall street",
+)
+STOCK_FUNDAMENTAL_KEYWORDS = (
+    "실적", "영업이익", "순이익", "매출", "가이던스", "어닝", "업황", "수주",
+    "공급계약", "공급망", "설비투자", "수출", "반도체", "배터리", "자동차", "조선",
+)
+BANK_FOCUS_KEYWORDS = (
+    "은행", "금융지주", "KB금융", "신한금융", "하나금융", "우리금융", "농협금융",
+    "기업은행", "NIM", "순이자마진", "예대금리차", "연체율", "충당금", "대손",
+    "가계대출", "기업대출", "예금", "저축은행", "보험", "캐피탈", "카드사",
+    "신한투자증권", "미래에셋증권", "한국투자증권", "NH투자증권", "삼성증권", "금융그룹",
+)
+POLICY_FOCUS_KEYWORDS = (
+    "기준금리", "통화정책", "한국은행", "금융위원회", "금융위", "금감원", "금융감독원",
+    "금융규제", "DSR", "가계부채", "바젤", "금융소비자보호",
+)
+MACRO_DATA_KEYWORDS = (
+    "GDP", "국내총생산", "경제성장", "성장률", "민간소비", "소비자물가", "생산자물가",
+    "고용지표", "실업률", "수출입 통계", "수출입 동향",
+)
+STOCK_HYPE_PATTERN = re.compile(
+    r"\[(?:특징주|급등주|테마주|상한가)[^\]]*\]|급등주|테마주|대장주|관련주|수혜주|"
+    r"상한가|하한가|급등|급락|폭등|폭락|따상|따따블|상따|추천주|주식\s*추천|"
+    r"종목\s*추천|수익률\s*인증|주가.{0,12}(?:상승|하락|강세|약세|껑충|쑥쑥)"
+)
+STOCK_FACT_PATTERN = re.compile(
+    r"영업이익|순이익|매출|가이던스|어닝|실적.{0,10}(?:발표|공시|개선|악화)|"
+    r"(?:분기|반기|연간|잠정|연결).{0,12}실적|수주|공급계약|설비투자|"
+    r"업황|공급망|수출.{0,10}(?:증가|감소|회복|둔화)"
+)
+STOCK_MARKET_MARKERS = {
+    "KR": (
+        "코스피", "코스닥", "kospi", "kosdaq", "국내 증시", "국내증시", "한국 증시",
+        "삼성전자", "sk하이닉스", "sk 하이닉스", "현대차", "현대자동차", "lg에너지솔루션",
+        "삼성", "한화", "HD현대", "포스코", "네이버", "카카오", "셀트리온", "롯데",
+    ),
+    "US": (
+        "나스닥", "nasdaq", "s&p500", "s&p 500", "다우", "뉴욕증시", "뉴욕 증시",
+        "미국 증시", "미 증시", "미증시", "월가", "월스트리트", "엔비디아", "테슬라",
+        "애플", "아마존", "마이크로소프트", "알파벳", "뉴욕증권거래소",
+        "미국 기업", "미국 주식", "美증시", "美 증시",
     ),
 }
 
@@ -284,6 +311,76 @@ def keyword_score(text: str, keywords: tuple[str, ...]) -> int:
         if keyword_text in haystack:
             score += 1 + haystack.count(keyword_text)
     return score
+
+
+def is_simple_stock_hype(item: dict[str, Any]) -> bool:
+    title = str(item.get("title") or "")
+    stock_context = re.search(
+        r"주가|주식|종목|테마|특징주|대장주|관련주|수혜주|상한가|하한가|급등주|따상|따따블|상따",
+        title,
+    )
+    if not stock_context or not STOCK_HYPE_PATTERN.search(title):
+        return False
+    # Keep broad index moves and reported results even when prices move sharply.
+    index_keywords = tuple(keyword for keyword in STOCK_MARKET_KEYWORDS if keyword != "증시")
+    return not (keyword_score(title, index_keywords) or STOCK_FACT_PATTERN.search(title))
+
+
+def is_relevant_stock_item(item: dict[str, Any]) -> bool:
+    if is_simple_stock_hype(item):
+        return False
+    title = str(item.get("title") or "")
+    other_market = re.search(r"브라질|항셍|닛케이|상하이종합|홍콩증시|홍콩 증시|중국증시|중국 증시|유럽증시|유럽 증시", title)
+    if other_market and keyword_score(title, STOCK_MARKET_KEYWORDS):
+        if not any(keyword_score(title, markers) for markers in STOCK_MARKET_MARKERS.values()):
+            return False
+    text = f"{item.get('title', '')}\n{item.get('summary', '')}"
+    return bool(keyword_score(text, STOCK_MARKET_KEYWORDS + STOCK_FUNDAMENTAL_KEYWORDS))
+
+
+def candidate_category(item: dict[str, Any], feed_category: str) -> str | None:
+    if is_simple_stock_hype(item):
+        return None
+    title = str(item.get("title") or "")
+    if keyword_score(title, BANK_FOCUS_KEYWORDS):
+        if keyword_score(title, POLICY_FOCUS_KEYWORDS):
+            return "거시경제·금융정책"
+        return "은행·금융산업"
+    if keyword_score(title, MACRO_DATA_KEYWORDS) and not keyword_score(title, STOCK_MARKET_KEYWORDS):
+        return "거시경제·금융정책"
+    if is_relevant_stock_item(item) and keyword_score(
+        title, STOCK_MARKET_KEYWORDS + STOCK_FUNDAMENTAL_KEYWORDS
+    ):
+        return STOCK_CATEGORY
+    if keyword_score(title, CATEGORY_PRIORITY_KEYWORDS["거시경제·금융정책"]):
+        return "거시경제·금융정책"
+    if feed_category == STOCK_CATEGORY:
+        return STOCK_CATEGORY if is_relevant_stock_item(item) else None
+    return feed_category if is_relevant_finance_item(item) else None
+
+
+def detect_stock_market(item: dict[str, Any]) -> str:
+    for text in (str(item.get("title") or ""), str(item.get("summary") or "")):
+        markets = [market for market, markers in STOCK_MARKET_MARKERS.items() if keyword_score(text, markers)]
+        if markets:
+            return markets[0] if len(markets) == 1 else "BOTH"
+    return "OTHER"
+
+
+def select_stock_items(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return items
+    selected: set[int] = set()
+    for market in ("KR", "US"):
+        for index, item in enumerate(items):
+            if item.get("stock_market") == market and len(selected) < limit:
+                selected.add(index)
+                break
+    for index in range(len(items)):
+        if len(selected) >= limit:
+            break
+        selected.add(index)
+    return [item for index, item in enumerate(items) if index in selected]
 
 
 def category_priority_score(item: dict[str, Any], category: str) -> int:
@@ -479,6 +576,7 @@ def collect_recent(hours: int, timeout: int, user_agent: str, verbose: bool, max
     cutoff = generated_at - timedelta(hours=hours)
 
     seen: set[str] = set()
+    feed_cache: dict[str, bytes | Exception] = {}
     items_by_category: dict[str, list[dict[str, Any]]] = {category: [] for category in CATEGORIES}
     feed_results: list[dict[str, Any]] = []
 
@@ -494,7 +592,15 @@ def collect_recent(hours: int, timeout: int, user_agent: str, verbose: bool, max
                 "error": None,
             }
             try:
-                data = fetch_feed(source, timeout=timeout, user_agent=user_agent)
+                if source.url not in feed_cache:
+                    try:
+                        feed_cache[source.url] = fetch_feed(source, timeout=timeout, user_agent=user_agent)
+                    except Exception as exc:
+                        feed_cache[source.url] = exc
+                cached = feed_cache[source.url]
+                if isinstance(cached, Exception):
+                    raise cached
+                data = cached
                 parsed_items, feed_title, bozo_error = parse_feed(category, source, data)
                 result["ok"] = True
                 result["feed_title"] = feed_title
@@ -505,18 +611,22 @@ def collect_recent(hours: int, timeout: int, user_agent: str, verbose: bool, max
                     if not item["published_at"]:
                         continue
                     published_at = datetime.fromisoformat(item["published_at"].replace("Z", "+00:00"))
-                    if published_at < cutoff:
+                    if published_at < cutoff or published_at > generated_at:
                         continue
 
-                    if not is_relevant_finance_item(item):
+                    assigned_category = candidate_category(item, category)
+                    if assigned_category is None:
                         continue
 
                     dedupe_key = normalize_link(item["link"]) or f"{category}:{item['title']}"
                     if dedupe_key in seen:
                         continue
                     seen.add(dedupe_key)
-                    item["category_priority_score"] = category_priority_score(item, category)
-                    items_by_category[category].append(item)
+                    item["category"] = assigned_category
+                    item["source_category"] = assigned_category
+                    item["stock_market"] = detect_stock_market(item)
+                    item["category_priority_score"] = category_priority_score(item, assigned_category)
+                    items_by_category[assigned_category].append(item)
                     result["recent_items"] += 1
 
             except (urllib.error.URLError, TimeoutError) as exc:
@@ -537,7 +647,10 @@ def collect_recent(hours: int, timeout: int, user_agent: str, verbose: bool, max
         category_items = dedupe_similar_topics(category_items)
         items_by_category[category] = category_items
         if max_per_category:
-            items_by_category[category] = category_items[:max_per_category]
+            items_by_category[category] = (
+                select_stock_items(category_items, max_per_category)
+                if category == STOCK_CATEGORY else category_items[:max_per_category]
+            )
             category_items = items_by_category[category]
         all_items.extend(category_items)
     all_items.sort(key=lambda item: item["published_at"] or "", reverse=True)
