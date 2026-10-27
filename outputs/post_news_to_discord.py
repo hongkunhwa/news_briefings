@@ -43,8 +43,8 @@ CATEGORY_COLORS = {
 }
 DEFAULT_CATEGORY_LIMITS = {
     "거시경제·금융정책": 4,
-    "은행·금융산업": 4,
-    "주식/증시": 2,
+    "은행·금융산업": 3,
+    "주식/증시": 3,
 }
 MAIN_CATEGORIES = CATEGORIES[:2]
 ISSUE_CATEGORY = CATEGORIES[2]
