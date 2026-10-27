@@ -34,8 +34,8 @@ HISTORY_HEADERS = ["발송시각", "기사건수", "상태"]
 CATEGORIES = ["거시경제·금융정책", "은행·금융산업", "주식/증시"]
 DEFAULT_CATEGORY_LIMITS = {
     "거시경제·금융정책": 4,
-    "은행·금융산업": 4,
-    "주식/증시": 2,
+    "은행·금융산업": 3,
+    "주식/증시": 3,
 }
 MAIN_CATEGORIES = CATEGORIES[:2]
 ISSUE_CATEGORY = CATEGORIES[2]
@@ -409,7 +409,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", default="outputs/news_recent_24h.json", help="요약/분류된 뉴스 JSON 경로")
     parser.add_argument("--env", default=".env", help="GOOGLE_CREDENTIALS_PATH와 SPREADSHEET_ID를 읽을 .env 경로")
     parser.add_argument("--allow-duplicates", action="store_true", help="이미 같은 원문 링크가 있어도 다시 추가")
-    parser.add_argument("--no-category-limits", action="store_true", help="Sheets에 전체 요약 기사를 누적하고 카테고리별 4/4/2 제한을 적용하지 않음")
+    parser.add_argument("--no-category-limits", action="store_true", help="Sheets에 전체 요약 기사를 누적하고 기본 4/3/3 제한 및 주식/증시 최대 6건 확대를 적용하지 않음")
     return parser.parse_args()
 
 
