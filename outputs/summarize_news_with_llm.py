@@ -34,14 +34,14 @@ from typing import Any
 CATEGORIES = [
     "거시경제·금융정책",
     "은행·금융산업",
-    "금융권 주요 이슈",
+    "주식/증시",
 ]
 DEFAULT_OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
 
-PROMPT_TEMPLATE = """다음 한국 뉴스 기사 1건을 읽고 JSON만 출력해줘.
+PROMPT_TEMPLATE = """다음 국내·미국 금융 및 주식 뉴스 기사 1건을 읽고 JSON만 출력해줘.
 
 요구사항:
 - summary_ko는 한국어 3줄이어야 한다.
@@ -50,15 +50,21 @@ PROMPT_TEMPLATE = """다음 한국 뉴스 기사 1건을 읽고 JSON만 출력�
 - interview_questions는 기사 내용과 은행권 면접 관점에 맞는 한국어 질문 2개 배열로 만든다.
 - interview_answers는 interview_questions 각각에 대한 한국어 답변 2개 배열로 만든다.
 - interview_answers 각 답변은 1~2문장으로, 면접에서 바로 말할 수 있는 톤으로 쓴다.
+- 주식/증시는 국내·미국 기업 실적, 산업·업종 동향, 코스피·코스닥·S&P500·나스닥·다우 등 주요 지수 중심으로 다룬다.
+- 단순 개별 종목 급등·테마·소문·추천 기사나 세 카테고리와 무관한 기사는 excluded를 true로 하고 exclusion_reason에 이유를 써라. 이때 요약과 질문·답변은 생성하지 않아도 된다.
+- 지수 급등락, 실제 기업 실적 발표, 산업 업황 분석은 단순 급등주 기사와 구분해 포함한다.
+- 질문·답변은 업황과 기업 현금흐름, 여신심사·신용위험, 담보가치, 은행 자산관리·고객 대응 등 기사와 관련 있는 은행 업무에 연결한다.
+- 면접 지원자가 답할 수 있는 질문을 만들고, 기사에 없는 수치·사실이나 확정적인 주가 전망·종목 매수 추천을 만들지 않는다.
+- category는 기사의 중심 주제로 결정한다. 은행권 시사점을 쓴다는 이유만으로 증시 기사를 은행·금융산업으로 옮기지 않는다.
 - 출력은 JSON 객체 하나만 허용한다.
 
 카테고리:
 - 거시경제·금융정책: 기준금리, 미국 연준(Fed), 물가(CPI), 환율, GDP, 고용지표, 국채금리, 금융위원회, 금융감독원, 한국은행, DSR, 가계부채, 바젤Ⅲ, 금융소비자보호
-- 은행·금융산업: 은행 실적, NIM, 연체율, 충당금, 가계대출, 기업대출, 예대금리차, KB금융그룹, 신한금융그룹, 하나금융그룹, 우리금융그룹, NH농협금융지주, IBK기업은행
-- 금융권 주요 이슈: 디지털금융, 생성형 AI, 금융 AI, 마이데이터, 오픈뱅킹, 인터넷은행, 카카오뱅크, 토스, 케이뱅크, 반도체, 배터리, 자동차, 조선, 부동산, 중소기업, 수출, ESG, 해외진출, 조직개편, 신사업
+- 은행·금융산업: 은행 실적, NIM, 연체율, 충당금, 가계대출, 기업대출, 예대금리차, KB금융그룹, 신한금융그룹, 하나금융그룹, 우리금융그룹, NH농협금융지주, IBK기업은행, 디지털금융, 은행 AI 전략, 인터넷은행
+- 주식/증시: 국내·미국 증시, 주요 주가지수, 기업 매출·영업이익·순이익·가이던스, 반도체·배터리·자동차·조선·빅테크 등 산업 동향. 은행 자체의 실적·건전성은 은행·금융산업으로 분류한다.
 
 출력 형식:
-{{"summary_ko":"핵심 사실 한 줄\\n배경과 맥락 한 줄\\n은행권 관점의 시사점 한 줄","category":"거시경제·금융정책","interview_questions":["금리 인하가 은행 수익성에 미치는 영향은?","환율 상승이 국내 경제에 미치는 영향은?"],"interview_answers":["금리 인하는 대출금리 하락으로 순이자마진을 압박할 수 있지만, 차주의 이자 부담을 낮춰 연체 위험을 완화할 수 있습니다.","환율 상승은 수입물가와 기업 비용을 높여 물가와 수익성에 부담을 주지만, 수출기업에는 가격 경쟁력 개선 요인이 될 수 있습니다."]}}
+{{"excluded":false,"summary_ko":"핵심 사실 한 줄\\n배경과 맥락 한 줄\\n은행권 관점의 시사점 한 줄","category":"거시경제·금융정책","interview_questions":["금리 인하가 은행 수익성에 미치는 영향은?","환율 상승이 국내 경제에 미치는 영향은?"],"interview_answers":["금리 인하는 대출금리 하락으로 순이자마진을 압박할 수 있지만, 차주의 이자 부담을 낮춰 연체 위험을 완화할 수 있습니다.","환율 상승은 수입물가와 기업 비용을 높여 물가와 수익성에 부담을 주지만, 수출기업에는 가격 경쟁력 개선 요인이 될 수 있습니다."]}}
 
 기사:
 제목: {title}
@@ -149,29 +155,17 @@ def parse_llm_content(content: str) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         preview = cleaned_content[:500].replace("\r", "\\r").replace("\n", "\\n")
         raise ValueError(f"LLM JSON parse failed: {exc}. Response preview: {preview}") from exc
-    summary_ko = normalize_summary(str(parsed.get("summary_ko", "")))
-    category = str(parsed.get("category", "")).strip()
-    if category not in CATEGORIES:
-        raise ValueError(f"LLM이 허용되지 않은 category를 반환했습니다: {category!r}")
-    interview_questions = normalize_interview_questions(parsed.get("interview_questions"))
-    if not interview_questions:
-        interview_questions = [
-            f"이 뉴스가 {category} 관점에서 은행권에 주는 영향은?",
-            "면접에서 이 이슈를 은행 지원 동기와 어떻게 연결해 설명할 수 있을까?",
-        ]
-    interview_answers = normalize_interview_answers(parsed.get("interview_answers"))
-    while len(interview_answers) < len(interview_questions):
-        interview_answers.append("기사의 핵심 변화가 은행의 수익성, 리스크 관리, 고객 대응에 어떤 영향을 주는지 연결해 답변하면 좋습니다.")
-    return {
-        "summary_ko": summary_ko,
-        "category": category,
-        "interview_questions": interview_questions,
-        "interview_answers": interview_answers[: len(interview_questions)],
-    }
+    return normalize_batch_result(parsed)
 
 
 def normalize_batch_result(parsed: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(parsed, dict):
+        raise ValueError("LLM response must be a JSON object.")
+    if parsed.get("excluded") is True:
+        return {"excluded": True, "exclusion_reason": str(parsed.get("exclusion_reason") or "브리핑 대상 제외")}
     summary_ko = normalize_summary(str(parsed.get("summary_ko", "")))
+    if len([line for line in summary_ko.splitlines() if line.strip()]) != 3:
+        raise ValueError("LLM summary must contain three nonempty Korean lines.")
     category = str(parsed.get("category", "")).strip()
     if category not in CATEGORIES:
         raise ValueError(f"LLM returned an unsupported category: {category!r}")
@@ -409,7 +403,7 @@ def build_batch_prompt(items: list[dict[str, Any]]) -> str:
         )
 
     return (
-        "다음 한국 금융권/은행권 뉴스 기사들을 각각 처리해서 JSON만 출력해줘.\n"
+        "다음 국내·미국 금융 및 주식 뉴스 기사들을 각각 처리해서 JSON만 출력해줘.\n"
         "각 기사마다 summary_ko, category, interview_questions, interview_answers를 만들어야 한다.\n"
         "summary_ko는 한국어 3줄이며 사실/맥락/시사점 순서로 쓰되 '사실:', '맥락:', '시사점:' 같은 라벨은 붙이지 않는다.\n"
         "category는 다음 중 하나만 고른다: "
@@ -417,6 +411,9 @@ def build_batch_prompt(items: list[dict[str, Any]]) -> str:
         + "\n"
         "interview_questions는 기사 기반 은행권 면접 질문 2개 배열이다.\n"
         "interview_answers는 각 질문에 대한 한국어 답변 2개 배열이며, 답변당 1~2문장으로 쓴다.\n"
+        "주식/증시는 국내·미국 기업 실적, 산업 동향, 주요 지수 중심이다. 은행 실적·건전성은 은행·금융산업, 거시지표·금융규제는 거시경제·금융정책으로 분류한다.\n"
+        "단순 개별 종목 급등·테마·소문·추천 기사나 무관한 기사는 excluded=true와 exclusion_reason을 반환하고 요약·질문·답변은 생략한다. 지수 변동과 실제 실적·업황 분석은 포함한다.\n"
+        "질문·답변은 여신심사, 신용위험, 현금흐름, 자산관리 등 은행권 면접에 연결한다. 기사에 없는 수치·사실이나 확정적인 주가 전망·매수 추천은 만들지 않는다.\n"
         '출력 형식은 반드시 {"results":[{"id":0,"summary_ko":"...","category":"...","interview_questions":["...","..."],"interview_answers":["...","..."]}]} 이다.\n'
         "입력 기사 JSON:\n"
         + json.dumps(articles, ensure_ascii=False)
@@ -494,7 +491,22 @@ def retry_delay_seconds(exc: Exception, fallback_seconds: float) -> float:
     return fallback_seconds
 
 
+def apply_llm_result(item: dict[str, Any], result: dict[str, Any]) -> bool:
+    if result.get("excluded"):
+        item["summary_excluded"] = True
+        item["summary_exclusion_reason"] = result["exclusion_reason"]
+        for key in ("summary_ko", "interview_questions", "interview_answers", "summary_error"):
+            item.pop(key, None)
+        return False
+    for key in ("summary_ko", "category", "interview_questions", "interview_answers"):
+        item[key] = result[key]
+    for key in ("summary_error", "summary_excluded", "summary_exclusion_reason"):
+        item.pop(key, None)
+    return True
+
+
 def rebuild_items_by_category(data: dict[str, Any]) -> None:
+    data["categories"] = list(CATEGORIES)
     items_by_category = {category: [] for category in CATEGORIES}
     for item in data.get("items", []):
         category = item.get("category")
@@ -553,6 +565,7 @@ def summarize_items(args: argparse.Namespace) -> int:
     if args.batch_size > 1:
         success_count = 0
         failure_count = 0
+        excluded_count = 0
         batch_size = max(1, args.batch_size)
         for batch_start in range(0, total, batch_size):
             batch = targets[batch_start : batch_start + batch_size]
@@ -595,13 +608,12 @@ def summarize_items(args: argparse.Namespace) -> int:
                         failure_count += 1
                         print(f"[{batch_start + local_index + 1}/{total}] 실패: {title} -> {item['summary_error']}", flush=True)
                         continue
-                    item["summary_ko"] = result["summary_ko"]
-                    item["category"] = result["category"]
-                    item["interview_questions"] = result["interview_questions"]
-                    item["interview_answers"] = result["interview_answers"]
-                    item.pop("summary_error", None)
-                    success_count += 1
-                    print(f"[{batch_start + local_index + 1}/{total}] 완료: {result['category']} / {title}", flush=True)
+                    if apply_llm_result(item, result):
+                        success_count += 1
+                        print(f"[{batch_start + local_index + 1}/{total}] 완료: {result['category']} / {title}", flush=True)
+                    else:
+                        excluded_count += 1
+                        print(f"[{batch_start + local_index + 1}/{total}] 제외: {title} / {result['exclusion_reason']}", flush=True)
             except Exception as exc:  # noqa: BLE001 - one bad batch must not stop the file save.
                 for item in batch:
                     item["summary_error"] = f"{type(exc).__name__}: {exc}"
@@ -626,11 +638,12 @@ def summarize_items(args: argparse.Namespace) -> int:
         print(f"저장 완료: {input_path.resolve()}")
         print(f"요약 성공: {success_count}건")
         print(f"요약 실패: {failure_count}건")
+        print(f"내용 기준 제외: {excluded_count}건")
         if total > 0 and success_count == 0:
             print("요약된 기사가 0건이라 다음 단계로 진행할 수 없습니다. 위의 첫 실패 원인을 확인하세요.")
             return 1
         if total > 0:
-            success_ratio = success_count / total
+            success_ratio = success_count / max(1, total - excluded_count)
             print(f"요약 성공률: {success_ratio:.1%}")
             if success_ratio < args.min_success_ratio:
                 print(f"요약 성공률이 기준({args.min_success_ratio:.0%})보다 낮아 다음 단계로 진행하지 않습니다.")
@@ -639,6 +652,7 @@ def summarize_items(args: argparse.Namespace) -> int:
 
     success_count = 0
     failure_count = 0
+    excluded_count = 0
     for idx, item in enumerate(targets, start=1):
         title = str(item.get("title", "")).replace("\n", " ")[:60]
         print(f"[{idx}/{total}] 요청 중: {title}", flush=True)
@@ -665,13 +679,12 @@ def summarize_items(args: argparse.Namespace) -> int:
 
             if result is None:
                 raise RuntimeError("LLM 응답을 받지 못했습니다.")
-            item["summary_ko"] = result["summary_ko"]
-            item["category"] = result["category"]
-            item["interview_questions"] = result["interview_questions"]
-            item["interview_answers"] = result["interview_answers"]
-            item.pop("summary_error", None)
-            success_count += 1
-            print(f"[{idx}/{total}] 완료: {result['category']} / {title}", flush=True)
+            if apply_llm_result(item, result):
+                success_count += 1
+                print(f"[{idx}/{total}] 완료: {result['category']} / {title}", flush=True)
+            else:
+                excluded_count += 1
+                print(f"[{idx}/{total}] 제외: {title} / {result['exclusion_reason']}", flush=True)
         except Exception as exc:  # noqa: BLE001 - one bad item must not stop the batch.
             item["summary_error"] = f"{type(exc).__name__}: {exc}"
             failure_count += 1
@@ -695,11 +708,12 @@ def summarize_items(args: argparse.Namespace) -> int:
     print(f"저장 완료: {input_path.resolve()}")
     print(f"요약 성공: {success_count}건")
     print(f"요약 실패: {failure_count}건")
+    print(f"내용 기준 제외: {excluded_count}건")
     if total > 0 and success_count == 0:
         print("요약된 기사가 0건이라 다음 단계로 진행할 수 없습니다. 위의 첫 실패 원인을 확인하세요.")
         return 1
     if total > 0:
-        success_ratio = success_count / total
+        success_ratio = success_count / max(1, total - excluded_count)
         print(f"요약 성공률: {success_ratio:.1%}")
         if success_ratio < args.min_success_ratio:
             print(f"요약 성공률이 기준({args.min_success_ratio:.0%})보다 낮아 다음 단계로 진행하지 않습니다.")
@@ -708,7 +722,7 @@ def summarize_items(args: argparse.Namespace) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="수집된 금융권/은행권 뉴스 JSON을 LLM으로 한국어 3줄 요약하고 6개 카테고리로 분류합니다.")
+    parser = argparse.ArgumentParser(description="수집된 금융·증시 뉴스 JSON을 LLM으로 한국어 3줄 요약하고 3개 카테고리로 분류합니다.")
     parser.add_argument("--input", default="outputs/news_recent_24h.json", help="업데이트할 원본 JSON 경로")
     parser.add_argument("--env", default=".env", help="LLM_API_KEY를 읽을 .env 파일 경로")
     parser.add_argument("--sleep", type=float, default=0.5, help="LLM 요청 사이 대기 시간(초). 기본값: 0.5")
