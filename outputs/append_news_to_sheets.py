@@ -31,11 +31,11 @@ HISTORY_SHEET = "브리핑히스토리"
 KST = timezone(timedelta(hours=9))
 USED_NEWS_HEADERS = ["발행일", "카테고리", "제목", "한국어 3줄 요약", "면접 질문", "면접 답변", "원문 링크", "출처 매체"]
 HISTORY_HEADERS = ["발송시각", "기사건수", "상태"]
-CATEGORIES = ["거시경제·금융정책", "은행·금융산업", "금융권 주요 이슈"]
+CATEGORIES = ["거시경제·금융정책", "은행·금융산업", "주식/증시"]
 DEFAULT_CATEGORY_LIMITS = {
     "거시경제·금융정책": 4,
     "은행·금융산업": 4,
-    "금융권 주요 이슈": 2,
+    "주식/증시": 2,
 }
 MAIN_CATEGORIES = CATEGORIES[:2]
 ISSUE_CATEGORY = CATEGORIES[2]
@@ -53,6 +53,22 @@ def effective_category_limits(grouped: dict[str, list[dict[str, Any]]]) -> dict[
             DEFAULT_CATEGORY_LIMITS[ISSUE_CATEGORY] + unused_main_slots,
         )
     return limits
+
+
+def select_stock_items(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return items
+    selected: set[int] = set()
+    for market in ("KR", "US"):
+        for index, item in enumerate(items):
+            if item.get("stock_market") == market and len(selected) < limit:
+                selected.add(index)
+                break
+    for index in range(len(items)):
+        if len(selected) >= limit:
+            break
+        selected.add(index)
+    return [item for index, item in enumerate(items) if index in selected]
 
 
 TOPIC_STOPWORDS = {
@@ -249,7 +265,10 @@ def ensure_headers(worksheet: Any, headers: list[str]) -> None:
 
 
 def limited_items(data: dict[str, Any], apply_limits: bool) -> list[dict[str, Any]]:
-    items = [item for item in data.get("items", []) if str(item.get("summary_ko") or "").strip()]
+    items = [
+        item for item in data.get("items", [])
+        if str(item.get("summary_ko") or "").strip() and not item.get("summary_excluded")
+    ]
     items.sort(key=lambda item: item.get("published_at") or "", reverse=True)
     items = dedupe_similar_topics(items)
     if not apply_limits:
@@ -270,7 +289,10 @@ def limited_items(data: dict[str, Any], apply_limits: bool) -> list[dict[str, An
     limited: list[dict[str, Any]] = []
     for category in CATEGORIES:
         category_items = grouped[category]
-        limited.extend(category_items[: limits[category]])
+        limited.extend(
+            select_stock_items(category_items, limits[category])
+            if category == CATEGORIES[2] else category_items[: limits[category]]
+        )
     return limited
 
 
