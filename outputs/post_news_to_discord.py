@@ -34,17 +34,17 @@ KST = timezone(timedelta(hours=9))
 CATEGORIES = [
     "거시경제·금융정책",
     "은행·금융산업",
-    "금융권 주요 이슈",
+    "주식/증시",
 ]
 CATEGORY_COLORS = {
     "거시경제·금융정책": 0xDC2626,  # red
     "은행·금융산업": 0x16A34A,  # green
-    "금융권 주요 이슈": 0x2563EB,  # blue
+    "주식/증시": 0x2563EB,  # blue
 }
 DEFAULT_CATEGORY_LIMITS = {
     "거시경제·금융정책": 4,
     "은행·금융산업": 4,
-    "금융권 주요 이슈": 2,
+    "주식/증시": 2,
 }
 MAIN_CATEGORIES = CATEGORIES[:2]
 ISSUE_CATEGORY = CATEGORIES[2]
@@ -62,6 +62,22 @@ def effective_category_limits(grouped: dict[str, list[dict[str, Any]]]) -> dict[
             DEFAULT_CATEGORY_LIMITS[ISSUE_CATEGORY] + unused_main_slots,
         )
     return limits
+
+
+def select_stock_items(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return items
+    selected: set[int] = set()
+    for market in ("KR", "US"):
+        for index, item in enumerate(items):
+            if item.get("stock_market") == market and len(selected) < limit:
+                selected.add(index)
+                break
+    for index in range(len(items)):
+        if len(selected) >= limit:
+            break
+        selected.add(index)
+    return [item for index, item in enumerate(items) if index in selected]
 
 
 TOPIC_STOPWORDS = {
@@ -228,7 +244,7 @@ def category_groups(data: dict[str, Any], limit_per_category: int = 0) -> dict[s
         category = item.get("category")
         if category not in grouped:
             continue
-        if not item.get("summary_ko"):
+        if not item.get("summary_ko") or item.get("summary_excluded"):
             continue
         candidate_items.append(item)
 
@@ -244,7 +260,7 @@ def category_groups(data: dict[str, Any], limit_per_category: int = 0) -> dict[s
     for category, items in grouped.items():
         limit = limit_per_category or limits.get(category, 0)
         if limit:
-            items = items[:limit]
+            items = select_stock_items(items, limit) if category == CATEGORIES[2] else items[:limit]
         grouped[category] = items
     return grouped
 
