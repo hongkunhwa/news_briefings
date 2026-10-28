@@ -13,7 +13,7 @@ updates the original JSON with:
 Optional .env values:
   LLM_PROVIDER=gemini or openai
   LLM_API_URL=https://api.openai.com/v1/chat/completions
-  LLM_MODEL=gemini-2.5-flash or gpt-4o-mini
+  LLM_MODEL=gemini-3.5-flash-lite or gpt-4o-mini
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ CATEGORIES = [
 ]
 DEFAULT_OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 
 PROMPT_TEMPLATE = """다음 국내·미국 금융 및 주식 뉴스 기사 1건을 읽고 JSON만 출력해줘.
@@ -281,11 +281,10 @@ def call_gemini_llm(
             }
         ],
         "generationConfig": {
-            "temperature": 0.2,
             "maxOutputTokens": max_tokens,
             "responseMimeType": "application/json",
             "thinkingConfig": {
-                "thinkingBudget": 0,
+                "thinkingLevel": "minimal",
             },
         },
     }
@@ -341,11 +340,10 @@ def call_gemini_batch_llm(
             }
         ],
         "generationConfig": {
-            "temperature": 0.2,
             "maxOutputTokens": max_tokens,
             "responseMimeType": "application/json",
             "thinkingConfig": {
-                "thinkingBudget": 0,
+                "thinkingLevel": "minimal",
             },
         },
     }
