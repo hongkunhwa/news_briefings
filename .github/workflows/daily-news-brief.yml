@@ -3,10 +3,8 @@ name: Daily Bank Finance News Brief
 # Maintained for daily scheduled news briefing automation.
 on:
   schedule:
-    # Korea 07:52 = UTC 22:52 on the previous day.
-    # The workflow usually takes 7-8 minutes, so the brief should arrive around 08:00 KST.
-    # Avoiding the 00-minute queue reduces GitHub scheduled workflow delays.
-    - cron: "52 22 * * *"
+    # UTC 00:00 = Korea 09:00. Delivery follows collection and summarization.
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 concurrency:
