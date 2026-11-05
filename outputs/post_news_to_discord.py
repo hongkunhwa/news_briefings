@@ -29,6 +29,10 @@ except ImportError:
 
 
 KST = timezone(timedelta(hours=9))
+MAX_EMBEDS_PER_MESSAGE = 10
+MAX_EMBED_TEXT_LENGTH = 6000
+# Keep multi-embed JSON bodies small even when the text limit is not reached.
+TARGET_WEBHOOK_BODY_BYTES = 16 * 1024
 
 
 CATEGORIES = [
@@ -233,8 +237,39 @@ def format_kst_datetime(value: Any) -> str:
         return raw[:16].replace("T", " ")
 
 
-def chunked(items: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]]:
-    return [items[index : index + size] for index in range(0, len(items), size)]
+def embed_text_length(embed: dict[str, Any]) -> int:
+    return (
+        len(embed.get("title", ""))
+        + len(embed.get("description", ""))
+        + len(embed.get("footer", {}).get("text", ""))
+        + len(embed.get("author", {}).get("name", ""))
+        + sum(len(field["name"]) + len(field["value"]) for field in embed.get("fields", []))
+    )
+
+
+def encode_webhook_payload(payload: dict[str, Any]) -> bytes:
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def chunk_embeds(embeds: list[dict[str, Any]], message: dict[str, Any]) -> list[list[dict[str, Any]]]:
+    chunks: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    text_length = 0
+    for embed in embeds:
+        length = embed_text_length(embed)
+        if current and (
+            len(current) >= MAX_EMBEDS_PER_MESSAGE
+            or text_length + length > MAX_EMBED_TEXT_LENGTH
+            or len(encode_webhook_payload({**message, "embeds": [*current, embed]})) > TARGET_WEBHOOK_BODY_BYTES
+        ):
+            chunks.append(current)
+            current = []
+            text_length = 0
+        current.append(embed)
+        text_length += length
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def category_groups(data: dict[str, Any], limit_per_category: int = 0) -> dict[str, list[dict[str, Any]]]:
@@ -281,7 +316,6 @@ def build_embed(item: dict[str, Any], category: str) -> dict[str, Any]:
 
     embed: dict[str, Any] = {
         "title": truncate(item.get("title", "제목 없음"), 256),
-        "description": description[:4096],
         "color": CATEGORY_COLORS[category],
         "fields": [
             {"name": "출처 매체", "value": truncate(source, 1024), "inline": True},
@@ -289,9 +323,15 @@ def build_embed(item: dict[str, Any], category: str) -> dict[str, Any]:
         ],
         "footer": {"text": truncate(f"{source} · {published_at_kst}", 2048)},
     }
+    description_limit = min(4096, MAX_EMBED_TEXT_LENGTH - embed_text_length(embed))
+    embed["description"] = description[:description_limit]
     if link:
         embed["url"] = link
     return embed
+
+
+class DiscordPayloadTooLarge(RuntimeError):
+    pass
 
 
 def post_webhook(webhook_url: str, payload: dict[str, Any], timeout: int) -> None:
@@ -300,20 +340,22 @@ def post_webhook(webhook_url: str, payload: dict[str, Any], timeout: int) -> Non
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (compatible; BankFinanceNewsBrief/1.0; +https://github.com/actions)",
     }
+    body = encode_webhook_payload(payload)
     if requests is not None:
         response = requests.post(
             webhook_url,
-            json=payload,
+            data=body,
             headers=headers,
             timeout=timeout,
         )
         if response.status_code >= 400:
-            raise RuntimeError(f"Discord HTTP {response.status_code}: {response.text[:1000]}")
+            error_type = DiscordPayloadTooLarge if response.status_code == 413 else RuntimeError
+            raise error_type(f"Discord HTTP {response.status_code} ({len(body)} bytes): {response.text[:1000]}")
         return
 
     request = urllib.request.Request(
         webhook_url,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        data=body,
         headers=headers,
         method="POST",
     )
@@ -321,8 +363,23 @@ def post_webhook(webhook_url: str, payload: dict[str, Any], timeout: int) -> Non
         with urllib.request.urlopen(request, timeout=timeout) as response:
             response.read()
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Discord HTTP {exc.code}: {body[:1000]}") from exc
+        error_text = exc.read().decode("utf-8", errors="replace")
+        error_type = DiscordPayloadTooLarge if exc.code == 413 else RuntimeError
+        raise error_type(f"Discord HTTP {exc.code} ({len(body)} bytes): {error_text[:1000]}") from exc
+
+
+def post_message(webhook_url: str, payload: dict[str, Any], timeout: int, sleep: float) -> None:
+    try:
+        post_webhook(webhook_url, payload, timeout=timeout)
+    except DiscordPayloadTooLarge:
+        embeds = payload.get("embeds", [])
+        if len(embeds) < 2:
+            raise
+        midpoint = len(embeds) // 2
+        print(f"Discord 요청 크기 초과: 거부된 기사 {len(embeds)}건을 두 메시지로 나눠 전송합니다.", flush=True)
+        post_message(webhook_url, {**payload, "embeds": embeds[:midpoint]}, timeout, sleep)
+        time.sleep(sleep)
+        post_message(webhook_url, {**payload, "embeds": embeds[midpoint:]}, timeout, sleep)
 
 
 def build_messages(grouped: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -342,17 +399,14 @@ def build_messages(grouped: dict[str, list[dict[str, Any]]]) -> list[dict[str, A
         items = grouped[category]
         if not items:
             continue
-        chunks = chunked(items, 10)
+        embeds = [build_embed(item, category) for item in items]
+        content = f"**{category}** {len(items)}건"
+        message = {"content": content, "allowed_mentions": {"parse": []}}
+        # Reserve space for the part number when sizing the request.
+        chunks = chunk_embeds(embeds, {**message, "content": f"{content} ({len(items)}/{len(items)})"})
         for index, chunk in enumerate(chunks, start=1):
             suffix = f" ({index}/{len(chunks)})" if len(chunks) > 1 else ""
-            embeds = [build_embed(item, category) for item in chunk]
-            messages.append(
-                {
-                    "content": f"**{category}** {len(items)}건{suffix}",
-                    "embeds": embeds,
-                    "allowed_mentions": {"parse": []},
-                }
-            )
+            messages.append({**message, "content": f"{content}{suffix}", "embeds": chunk})
     return messages
 
 
@@ -390,7 +444,7 @@ def post_news(args: argparse.Namespace) -> int:
     for idx, message in enumerate(messages, start=1):
         preview = textwrap.shorten(message.get("content", ""), width=80, placeholder="…")
         print(f"[{idx}/{len(messages)}] 전송 중: {preview}", flush=True)
-        post_webhook(webhook_url, message, timeout=args.timeout)
+        post_message(webhook_url, message, timeout=args.timeout, sleep=args.sleep)
         print(f"[{idx}/{len(messages)}] 전송 완료", flush=True)
         if idx < len(messages):
             time.sleep(args.sleep)
